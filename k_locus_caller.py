@@ -44,7 +44,7 @@ def main():
     for assembly in args.assembly:
         best_k = get_best_k_type_match(assembly, args.ref_types, k_refs_dict)
         print('Assembly: ' + assembly + ', best K-type match: ' + best_k.name) # TEMP
-        assembly_pieces, ideal = get_assembly_pieces(assembly, best_k)
+        # assembly_pieces, ideal = get_assembly_pieces(assembly, best_k)
 
 
 
@@ -193,34 +193,41 @@ def load_fasta(filename):
         fasta_seqs.append((name, sequence))
     return fasta_seqs
 
-def get_assembly_pieces(assembly, k_type):
+# def get_assembly_pieces(assembly, k_type):
+#     '''
+#     This function uses the BLAST hits in the given K-type to find the corresponding pieces of the
+#     given assembly.
+#     It uses the following logic:
+#       * If the start and end (with a bit of wiggle room) of the K-locus both hit to the same
+#         contig, and the distance between matches the K-locus size (with a bit of wiggle room),
+#         then we just return that one piece of that one contig (ideal scenario).
+#       * If the first case doesn't apply (either because the start and end are on different contigs
+#         or because the length doesn't match up), then we gather the assembly pieces as follows:
+#           - Sort the BLAST hits by alignment length from largest to smallest
+#           - For each BLAST hit, we keep it if it offers new parts of the K-locus. If, on the other
+#             hand it lies entirely within an existing hit (in K-locus positions), we ignore it.
+#           - For all of the BLAST hits we've kept, I merge any overlapping ones (in assembly
+#             positions) and return those.
+#     The first (better) case will result in a '+' for the confidence call.  The second (worse) case
+#     will result in a '?'.
+#     '''
+#     TO DO
+#     TO DO
+#     TO DO
+#     TO DO
+#     TO DO
+#     TO DO
+#     TO DO
+#     TO DO
+#     TO DO
+#     TO DO
+
+
+def blast_range_to_python_range(start, end):
     '''
-    This function uses the BLAST hits in the given K-type to find the corresponding pieces of the
-    given assembly.
-    It uses the following logic:
-      * If the start and end (with a bit of wiggle room) of the K-locus both hit to the same
-        contig, and the distance between matches the K-locus size (with a bit of wiggle room),
-        then we just return that one piece of that one contig (ideal scenario).
-      * If the first case doesn't apply (either because the start and end are on different contigs
-        or because the length doesn't match up), then we gather the assembly pieces as follows:
-          - Sort the BLAST hits by alignment length from largest to smallest
-          - For each BLAST hit, we keep it if it offers new parts of the K-locus. If, on the other
-            hand it lies entirely within an existing hit (in K-locus positions), we ignore it.
-          - For all of the BLAST hits we've kept, I merge any overlapping ones (in assembly
-            positions) and return those.
-    The first (better) case will result in a '+' for the confidence call.  The second (worse) case
-    will result in a '?'.
+    Converts a BLAST range (1-based, inclusive end) to a Python range (0-based, exclusive end).
     '''
-    TO DO
-    TO DO
-    TO DO
-    TO DO
-    TO DO
-    TO DO
-    TO DO
-    TO DO
-    TO DO
-    TO DO
+    return (start - 1, end)
 
 
 class BlastHit:
@@ -242,17 +249,17 @@ class BlastHit:
         return 'Query: ' + self.qseqid + ' (' + str(self.qstart) + '-' + str(self.qend) + ') ' + \
                'Subject: ' + self.sseqid + ' (' + str(self.sstart) + '-' + str(self.send) + ')'
 
-    def get_assembly_piece(self, assembly):
-        '''
-        Returns the piece of the assembly which corresponds to this BLAST hit.
-        '''
-        TO DO
-        TO DO
-        TO DO
-        TO DO
-        TO DO
-        TO DO
-        TO DO
+    # def get_assembly_piece(self, assembly):
+    #     '''
+    #     Returns the piece of the assembly which corresponds to this BLAST hit.
+    #     '''
+    #     TO DO
+    #     TO DO
+    #     TO DO
+    #     TO DO
+    #     TO DO
+    #     TO DO
+    #     TO DO
 
 
 
@@ -272,13 +279,8 @@ class KLocusReference:
         '''
         if assembly_name not in self.blast_hits:
             return 0
-        hit_ranges = [(x.qstart, x.qend) for x in self.blast_hits[assembly_name]]
-        hit_locations = [0] * len(self.seq)
-        for hit_range in hit_ranges:
-            fixed_range = (min(hit_range) - 1, max(hit_range))
-            for i in xrange(fixed_range[0], fixed_range[1]):
-                hit_locations[i] = 1
-        return sum(hit_locations)
+        hit_ranges = [blast_range_to_python_range(x.qstart, x.qend) for x in self.blast_hits[assembly_name]]
+        return IntRange(hit_ranges).get_total_length()
 
     def get_fraction_hit_length(self, assembly_name):
         '''
@@ -287,55 +289,66 @@ class KLocusReference:
         return self.get_total_hit_length(assembly_name) / len(self.seq)
 
 
-class AssemblyPiece:
-    def __init__(self, assembly, contig, seq):
-        self.assembly_name = assembly_name
-        self.contig = contig
-        self.seq = seq
-        TO DO
-        TO DO
-        TO DO
-        TO DO
-        TO DO
-        TO DO
-        TO DO
-        TO DO
-        TO DO
-        TO DO
-        TO DO
-        TO DO
-        TO DO
+# class AssemblyPiece:
+#     def __init__(self, assembly, contig, seq):
+#         self.assembly_name = assembly_name
+#         self.contig = contig
+#         self.seq = seq
+#         TO DO
+#         TO DO
+#         TO DO
+#         TO DO
+#         TO DO
+#         TO DO
+#         TO DO
+#         TO DO
+#         TO DO
+#         TO DO
+#         TO DO
+#         TO DO
+#         TO DO
 
 
 
 class IntRange:
-    def __init__(self, ranges):
+    '''
+    This class contains one or more integer ranges.  Overlapping ranges will be merged together.
+    It stores its ranges in a Python-like fashion where the last value in each range is
+    exclusive.
+    '''
+    def __init__(self, ranges = []):
         self.ranges = []
         self.add_ranges(ranges)
         self.simplify()
 
-    def add_range(self, one_range):
-        self.add_ranges([one_range])
+    def __repr__(self):
+        return str(self.ranges)
+
+    def add_range(self, start, end):
+        '''
+        Adds a single range.
+        '''
+        self.add_ranges([(start, end)])
 
     def add_ranges(self, ranges):
+        '''
+        Adds multiple ranges (list of tuples)
+        '''
         self.ranges += ranges
         self.simplify()
+
+    def get_total_length(self):
+        '''
+        Returns the number of integers in the ranges.
+        '''
+        return sum([x[1] - x[0] for x in self.ranges])
 
     def simplify(self):
         '''
         Collapses overlapping ranges together.
         '''
-        TO DO: double check 0-based vs 1-based, inclusive vs exclusive
-        TO DO: double check 0-based vs 1-based, inclusive vs exclusive
-        TO DO: double check 0-based vs 1-based, inclusive vs exclusive
-        TO DO: double check 0-based vs 1-based, inclusive vs exclusive
-        TO DO: double check 0-based vs 1-based, inclusive vs exclusive
-        TO DO: double check 0-based vs 1-based, inclusive vs exclusive
-        TO DO: double check 0-based vs 1-based, inclusive vs exclusive
-        TO DO: double check 0-based vs 1-based, inclusive vs exclusive
-
         fixed_ranges = []
-        for int_range in ranges:
+        for int_range in self.ranges:
             if int_range[1] < int_range[0]:
                 fixed_ranges.append((int_range[1], int_range[0]))
             else:
@@ -357,7 +370,8 @@ class IntRange:
             elif depth == 0:
                 combined.append((start, pos))
             prev_depth = depth
-        return combined
+        self.ranges = combined
+
         
 
 
