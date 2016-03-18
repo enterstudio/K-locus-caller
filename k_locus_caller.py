@@ -50,9 +50,8 @@ def main():
         save_assembly_pieces_to_file(assembly_pieces, args.outdir, best_k.name) # TO DO: add the qualifiers to the filename (e.g. '?' or '*')
         print('Assembly: ' + str(assembly) + ', best K-type match: ' + best_k.name + ', ideal: ' + str(ideal)) # TEMP
         for piece in assembly_pieces: # TEMP
-            print(piece) # TEMP
-            print(piece.get_sequence_short()) # TEMP
-        print('\n\n') # TEMP
+            print(str(piece) + ': ' + piece.get_sequence_short()) # TEMP
+        print() # TEMP
     sys.exit(0)
 
 
@@ -428,7 +427,7 @@ class Assembly:
             self.make_blast_database()
 
     def __repr__(self):
-        return 'K-locus ' + self.name
+        return self.name
 
     def blast_database_exists(self):
         '''
