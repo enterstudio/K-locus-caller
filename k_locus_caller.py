@@ -40,11 +40,14 @@ def main():
     check_files_exist(args.assembly)
     check_file_exists(args.ref_types)
     check_file_exists(args.ref_genes)
+    if not os.path.exists(args.outdir):
+        os.makedirs(args.outdir)
     k_refs_dict = load_k_locus_references(args.ref_types)
     for fasta_file in args.assembly:
         assembly = Assembly(fasta_file)
         best_k = get_best_k_type_match(assembly, args.ref_types, k_refs_dict)
         assembly_pieces, ideal = get_assembly_pieces(assembly, best_k, args)
+        save_assembly_pieces_to_file(assembly_pieces, args.outdir, best_k.name) # TO DO: add the qualifiers to the filename (e.g. '?' or '*')
         print('Assembly: ' + str(assembly) + ', best K-type match: ' + best_k.name + ', ideal: ' + str(ideal)) # TEMP
         for piece in assembly_pieces: # TEMP
             print(piece) # TEMP
@@ -65,6 +68,8 @@ def get_arguments():
                         help='Fasta file with reference K-locus nucleotide sequences')
     parser.add_argument('-g', '--ref_genes', type=str, required=True,
                         help='Fasta file reference gene protein sequences')
+    parser.add_argument('-o', '--outdir', type=str, required=True,
+                        help='Output directory')
     parser.add_argument('--start_end_margin', type=int, required=False, default=10,
                         help='Missing bases at the ends of K-locus allowed in a perfect match.')
     parser.add_argument('--allowed_length_error', type=int, required=False, default=5,
@@ -211,9 +216,6 @@ def get_assembly_pieces(assembly, k_type, args):
     # Check for the ideal case.
     earliest_hit = k_type.get_earliest_hit()
     latest_hit = k_type.get_latest_hit()
-    print(earliest_hit)
-    print(latest_hit)
-    print()
     start = earliest_hit.qstart
     end = latest_hit.qend
     k_len = k_type.get_length()
@@ -267,44 +269,43 @@ def reverse_complement(seq):
     '''
     rev_comp = ''
     for i in reversed(range(len(seq))):
-        base = seq[i]
-        if base == 'A': rev_comp += 'T'
-        elif base == 'T': rev_comp += 'A'
-        elif base == 'G': rev_comp += 'C'
-        elif base == 'C': rev_comp += 'G'
-        elif base == 'a': rev_comp += 't'
-        elif base == 't': rev_comp += 'a'
-        elif base == 'g': rev_comp += 'c'
-        elif base == 'c': rev_comp += 'g'
-        elif base == 'R': rev_comp += 'Y'
-        elif base == 'Y': rev_comp += 'R'
-        elif base == 'S': rev_comp += 'S'
-        elif base == 'W': rev_comp += 'W'
-        elif base == 'K': rev_comp += 'M'
-        elif base == 'M': rev_comp += 'K'
-        elif base == 'r': rev_comp += 'y'
-        elif base == 'y': rev_comp += 'r'
-        elif base == 's': rev_comp += 's'
-        elif base == 'w': rev_comp += 'w'
-        elif base == 'k': rev_comp += 'm'
-        elif base == 'm': rev_comp += 'k'
-        elif base == 'B': rev_comp += 'V'
-        elif base == 'D': rev_comp += 'H'
-        elif base == 'H': rev_comp += 'D'
-        elif base == 'V': rev_comp += 'B'
-        elif base == 'b': rev_comp += 'v'
-        elif base == 'd': rev_comp += 'h'
-        elif base == 'h': rev_comp += 'd'
-        elif base == 'v': rev_comp += 'b'
-        elif base == 'N': rev_comp += 'N'
-        elif base == 'n': rev_comp += 'n'
-        elif base == '.': rev_comp += '.'
-        elif base == '-': rev_comp += '-'
-        elif base == '?': rev_comp += '?'
-        else: rev_comp += 'N'
+        rev_comp += complement_base(seq[i])
     return rev_comp
 
+def complement_base(base):
+    '''
+    Given a DNA base, this returns the complement.
+    '''
+    forward = 'ATGCatgcRYSWKMryswkmBDHVbdhvNn.-?'
+    reverse = 'TACGtacgYRSWMKyrswmkVHDBvhdbNn.-?N'
+    return reverse[forward.find(base)]
 
+def save_assembly_pieces_to_file(assembly_pieces, outdir, k_locus_name):
+    '''
+    Creates a single FASTA file for all of the assembly pieces.
+    Assumes all assembly pieces are from the same assembly.
+    '''
+    if not assembly_pieces:
+        return
+    assembly_name = assembly_pieces[0].assembly.name
+    fasta_file_name = os.path.join(outdir, assembly_name + '_' + k_locus_name + '.fasta')
+    fasta_file = open(fasta_file_name, 'w')
+    for piece in assembly_pieces:
+        fasta_file.write('>' + piece.get_header() + '\n')
+        fasta_file.write(add_line_breaks_to_sequence(piece.get_sequence(), 60))
+
+def add_line_breaks_to_sequence(sequence, length):
+    '''
+    Wraps sequences to the defined length.  All resulting sequences end in a line break.
+    '''
+    seq_with_breaks = ''
+    while len(sequence) > length:
+        seq_with_breaks += sequence[:length] + '\n'
+        sequence = sequence[length:]
+    if sequence:
+        seq_with_breaks += sequence
+        seq_with_breaks += '\n'
+    return seq_with_breaks
 
 
 
@@ -462,14 +463,16 @@ class AssemblyPiece:
         self.strand = strand
 
     def __repr__(self):
+        return self.assembly.name + '_' + self.get_header()
+
+    def get_header(self):
         '''
-        Produces a name for the assembly piece, including the assembly name, contig number and the
-        range (in a 1-based inclusive format).
+        Returns a descriptive string for the FASTA header when saving this piece to file.
         '''
         contig_name_parts = self.contig_name.split('_')
         contig_number = contig_name_parts[1]
-        return self.assembly.name + '_NODE_' + contig_number + '_' + \
-               str(self.start + 1) + '_to_' + str(self.end) + '_' + self.strand + '_strand'
+        return 'NODE_' + contig_number + '_' + str(self.start + 1) + '_to_' + str(self.end) + \
+               '_' + self.strand + '_strand'
 
     def get_sequence(self):
         '''
