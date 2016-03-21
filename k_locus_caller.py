@@ -28,7 +28,6 @@ import argparse
 import sys
 import os
 import subprocess
-from distutils import spawn
 
 
 def main():
@@ -37,21 +36,25 @@ def main():
     '''
     args = get_arguments()
     check_for_blast()
-    check_files_exist(args.assembly)
-    check_file_exists(args.ref_types)
-    check_file_exists(args.ref_genes)
+    check_files_exist(args.assembly + [args.k_ref_seqs] + [args.k_ref_genes] + [args.gene_seqs])
     if not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
-    k_refs_dict = load_k_locus_references(args.ref_types)
+    k_refs = load_k_locus_references(args.k_ref_seqs, args.k_ref_genes) # type: dict[str, KLocusReference]
     for fasta_file in args.assembly:
         assembly = Assembly(fasta_file)
-        best_k = get_best_k_type_match(assembly, args.ref_types, k_refs_dict)
-        assembly_pieces, ideal = get_assembly_pieces(assembly, best_k, args)
-        save_assembly_pieces_to_file(assembly_pieces, args.outdir, best_k.name) # TO DO: add the qualifiers to the filename (e.g. '?' or '*')
+        best_k = get_best_k_type_match(assembly, args.k_ref_seqs, k_refs)
+        pieces_matching_k_locus, ideal = get_assembly_pieces(assembly, best_k, args)
+        save_assembly_pieces_to_file(pieces_matching_k_locus, args.outdir, best_k.name)
+
         print('Assembly: ' + str(assembly) + ', best K-type match: ' + best_k.name + ', ideal: ' + str(ideal)) # TEMP
-        for piece in assembly_pieces: # TEMP
+        for piece in pieces_matching_k_locus: # TEMP
             print(str(piece) + ': ' + piece.get_sequence_short()) # TEMP
+
+        protein_blast(assembly, pieces_matching_k_locus, best_k, args)
+
         print() # TEMP
+        
+
     sys.exit(0)
 
 
@@ -63,130 +66,88 @@ def get_arguments():
     parser = argparse.ArgumentParser(description='K-locus caller')
     parser.add_argument('-a', '--assembly', nargs='+', type=str, required=True,
                         help='Fasta file(s) for Klebsiella assemblies')
-    parser.add_argument('-r', '--ref_types', type=str, required=True,
+    parser.add_argument('-k', '--k_ref_seqs', type=str, required=True,
                         help='Fasta file with reference K-locus nucleotide sequences')
-    parser.add_argument('-g', '--ref_genes', type=str, required=True,
-                        help='Fasta file reference gene protein sequences')
+    parser.add_argument('-g', '--k_ref_genes', type=str, required=True,
+                        help='Table file specifying which genes occur in which K-locus')
+    parser.add_argument('-s', '--gene_seqs', type=str, required=True,
+                        help='Fasta file with protein sequences for each gene')
     parser.add_argument('-o', '--outdir', type=str, required=True,
                         help='Output directory')
     parser.add_argument('--start_end_margin', type=int, required=False, default=10,
                         help='Missing bases at the ends of K-locus allowed in a perfect match.')
     parser.add_argument('--allowed_length_error', type=int, required=False, default=5,
                         help='% error in K-locus length allowed in a perfect match')
+    parser.add_argument('--min_gene_cov', type=float, required=False, default=90.0,
+                        help='minimum required % coverage for genes')
+    parser.add_argument('--min_gene_id', type=float, required=False, default=90.0,
+                        help='minimum required % identity for genes')
     return parser.parse_args()
 
-def check_for_blast():
+def check_for_blast(): # type: () -> bool
     '''
     Checks to make sure the required BLAST+ tools are available.
     '''
-    if not spawn.find_executable('makeblastdb'):
+    if not find_program('makeblastdb'):
         quit_with_error('could not find makeblastdb tool (part of BLAST+)')
-    if not spawn.find_executable('blastn'):
+    if not find_program('blastn'):
         quit_with_error('could not find blastn tool (part of BLAST+)')
-    if not spawn.find_executable('tblastn'):
+    if not find_program('tblastn'):
         quit_with_error('could not find tblastn tool (part of BLAST+)')
 
-def check_files_exist(filenames):
+def find_program(name): # type: (str) -> bool
+    '''
+    Checks to see if a program exists.
+    '''
+    process = subprocess.Popen(['which', name], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out, err = process.communicate()
+    return bool(out) and not bool(err)
+
+def check_files_exist(filenames): # type: (list[str]) -> bool
     '''
     Checks to make sure each file in the given list exists.
     '''
     for filename in filenames:
         check_file_exists(filename)
 
-def check_file_exists(filename):
+def check_file_exists(filename): # type: (str) -> bool
     '''
     Checks to make sure the single given file exists.
     '''
     if not os.path.isfile(filename):
-        quit_with_error('Error: could not find ' + filename)
+        quit_with_error('could not find ' + filename)
 
-def quit_with_error(message):
+def quit_with_error(message): # type: (str) -> None
     '''
     Displays the given message and ends the program's execution.
     '''
     print('Error:', message, file=sys.stderr)
     sys.exit(1)
 
-def get_best_k_type_match(assembly, k_refs_fasta, k_refs_dict):
+def get_best_k_type_match(assembly, k_refs_fasta, k_refs):
+    # type: (Assembly, str, dict[str, KLocusReference]) -> KLocusReference
     '''
     Searches for all known K-types in the given assembly and returns the best match.
     Best match is defined as the K-type for which the largest fraction of the K-type has a BLAST
     hit to the assembly.
     '''
-    for k_ref in k_refs_dict.itervalues():
+    for k_ref in k_refs.itervalues():
         k_ref.clear_hits()
     blast_hits = get_blast_hits(assembly.fasta, k_refs_fasta)
     for hit in blast_hits:
-        if hit.qseqid not in k_refs_dict:
+        if hit.qseqid not in k_refs:
             quit_with_error('BLAST hit (' + hit.qseqid + ') not found in K-locus references')
-        k_refs_dict[hit.qseqid].add_blast_hit(hit)
-    for k_ref in k_refs_dict.itervalues():
+        k_refs[hit.qseqid].add_blast_hit(hit)
+    for k_ref in k_refs.itervalues():
         k_ref.sort_hits()
     best_k_ref = None
     best_fraction_hit = 0.0
-    for k_ref in k_refs_dict.itervalues():
+    for k_ref in k_refs.itervalues():
         fraction_hit = k_ref.get_fraction_hit_length()
         if fraction_hit > best_fraction_hit:
             best_fraction_hit = fraction_hit
             best_k_ref = k_ref
     return best_k_ref
-
-def get_blast_hits(database, query):
-    '''
-    Returns a list BlastHit objects for a search of the given query in the given database.
-    '''
-    blastn_command = ['blastn', '-db', database, '-query', query, '-outfmt',
-                      '6 qseqid sseqid qstart qend sstart send evalue bitscore length pident']
-    process = subprocess.Popen(blastn_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    out, err = process.communicate()
-    if err:
-        quit_with_error('blastn encountered an error:\n' + err)
-    blast_hits = [BlastHit(line) for line in line_iterator(out)]
-    return blast_hits
-
-def line_iterator(string_with_line_breaks):
-    '''
-    Iterates over a string containing line breaks, one line at a time.
-    '''
-    prev_newline = -1
-    while True:
-        next_newline = string_with_line_breaks.find('\n', prev_newline + 1)
-        if next_newline < 0:
-            break
-        yield string_with_line_breaks[prev_newline + 1:next_newline]
-        prev_newline = next_newline
-
-def load_k_locus_references(fasta):
-    '''
-    Returns a dictionary of:
-      key = K-locus name
-      value = KLocusReference object
-    '''
-    return {seq[0]: KLocusReference(seq[0], seq[1]) for seq in load_fasta(fasta)}
-
-def load_fasta(filename):
-    '''
-    Returns a list of tuples (name, seq) for the sequences in the fasta.
-    '''
-    fasta_seqs = []
-    fasta_file = open(filename, 'r')
-    name = ''
-    sequence = ''
-    for line in fasta_file:
-        line = line.strip()
-        if not line:
-            continue
-        if line[0] == '>': # Header line = start of new contig
-            if name:
-                fasta_seqs.append((name, sequence))
-                name = ''
-                sequence = ''
-            name = line[1:]
-        else:
-            sequence += line
-    if name:
-        fasta_seqs.append((name, sequence))
-    return fasta_seqs
 
 def get_assembly_pieces(assembly, k_type, args):
     '''
@@ -228,7 +189,8 @@ def get_assembly_pieces(assembly, k_type, args):
             contig_start, contig_end = earliest_hit.sstart, latest_hit.send
         else:
             contig_start, contig_end = latest_hit.sstart, earliest_hit.send
-        one_piece = AssemblyPiece(assembly, earliest_hit.sseqid, contig_start, contig_end, earliest_hit.strand)
+        one_piece = AssemblyPiece(assembly, earliest_hit.sseqid, contig_start, contig_end,
+                                  earliest_hit.strand)
         return [one_piece], True
 
     # If we got here, then it's the non-ideal case.  Keep BLAST hits that give us new parts of the
@@ -242,6 +204,99 @@ def get_assembly_pieces(assembly, k_type, args):
             used_hits.append(hit)
     assembly_pieces = [x.get_assembly_piece(assembly) for x in used_hits]
     return merge_assembly_pieces(assembly_pieces), False
+
+def protein_blast(assembly, pieces_matching_k_locus, k_locus_ref, args):
+    '''
+    Conducts a BLAST search of all known K-locus proteins.  Returns the BLAST hits for 
+    '''
+    blast_hits = get_blast_hits(assembly.fasta, args.gene_seqs, genes=True)
+    filtered_hits = [x for x in blast_hits if x.query_cov >= args.min_gene_cov and x.pident >= args.min_gene_id]
+    expected_gene_hits = []
+    missing_expected_genes = []
+    for expected_gene in k_locus_ref.gene_names:
+        best_hit = get_best_hit_for_query(filtered_hits, expected_gene)
+        if not best_hit:
+            missing_expected_genes.append(expected_gene)
+        else:
+            expected_gene_hits.append(best_hit)
+            filtered_hits = [x for x in filtered_hits if x is not best_hit]
+            filtered_hits = cull_conflicting_hits(best_hit, filtered_hits)
+    other_hits = cull_all_conflicting_hits(filtered_hits)
+
+    expected_gene_hits_inside_locus = [x for x in expected_gene_hits if x.in_assembly_pieces(pieces_matching_k_locus)]
+    expected_gene_hits_outside_locus = [x for x in expected_gene_hits if not x.in_assembly_pieces(pieces_matching_k_locus)]
+    other_hits_inside_locus = [x for x in other_hits if x.in_assembly_pieces(pieces_matching_k_locus)]
+    other_hits_outside_locus = [x for x in other_hits if not x.in_assembly_pieces(pieces_matching_k_locus)]
+
+    # TEMP
+    print('\n')
+    print('expected_gene_hits_inside_locus')
+    for hit in expected_gene_hits_inside_locus:
+        print(hit)
+    print('\n')
+    print('expected_gene_hits_outside_locus')
+    for hit in expected_gene_hits_outside_locus:
+        print(hit)
+    print('\n')
+    print('other_hits_inside_locus')
+    for hit in other_hits_inside_locus:
+        print(hit)
+    print('\n')
+    print('other_hits_outside_locus')
+    for hit in other_hits_outside_locus:
+        print(hit)
+
+def get_blast_hits(database, query, genes=False):
+    '''
+    Returns a list BlastHit objects for a search of the given query in the given database.
+    '''
+    if genes:
+        command = ['tblastn']
+    else:
+        command = ['blastn']
+    command += ['-db', database, '-query', query, '-outfmt',
+                '6 qseqid sseqid qstart qend sstart send evalue bitscore length pident qlen qseq']
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out, err = process.communicate()
+    if err:
+        quit_with_error('blastn encountered an error:\n' + err)
+    if genes:
+        blast_hits = [GeneBlastHit(line) for line in line_iterator(out)]
+    else:
+        blast_hits = [BlastHit(line) for line in line_iterator(out)]
+    return blast_hits
+
+def get_best_hit_for_query(blast_hits, query_name):
+    '''
+    Given a list of BlastHits, this function returns the best hit for the given query, based on
+    identity.  It returns None if no BLAST hits match that query.
+    '''
+    matching_hits = [x for x in blast_hits if x.qseqid == query_name]
+    if matching_hits:
+        return sorted(matching_hits, key=lambda x: x.pident, reverse=True)[0]
+    else:
+        return None
+
+def cull_conflicting_hits(hit_to_keep, blast_hits):
+    '''
+    This function returns a (potentially) reduced set of BLAST hits which excludes BLAST hits that
+    overlap with the hit to keep (same part of assembly) and are in the same cluster as the hit to
+    keep.
+    '''
+    return [x for x in blast_hits if not x.conflicts(hit_to_keep)]
+
+
+def cull_all_conflicting_hits(blast_hits):
+    '''
+    This function returns a (potentially) reduced set of BLAST hits where none of the remaining
+    hits conflict.
+    '''
+    blast_hits.sort(key=lambda x: x.pident, reverse=True)
+    kept_hits = []
+    while blast_hits:
+        kept_hits.append(blast_hits.pop(0))
+        blast_hits = cull_conflicting_hits(kept_hits[-1], blast_hits)
+    return kept_hits
 
 def merge_assembly_pieces(pieces):
     '''
@@ -306,9 +361,53 @@ def add_line_breaks_to_sequence(sequence, length):
         seq_with_breaks += '\n'
     return seq_with_breaks
 
+def line_iterator(string_with_line_breaks):
+    '''
+    Iterates over a string containing line breaks, one line at a time.
+    '''
+    prev_newline = -1
+    while True:
+        next_newline = string_with_line_breaks.find('\n', prev_newline + 1)
+        if next_newline < 0:
+            break
+        yield string_with_line_breaks[prev_newline + 1:next_newline]
+        prev_newline = next_newline
+
+def load_k_locus_references(fasta, table): # type: (str, str) -> dict[str, KLocusReference]
+    '''
+    Returns a dictionary of:
+      key = K-locus name
+      value = KLocusReference object
+    '''
+    return {seq[0]: KLocusReference(seq[0], seq[1], table) for seq in load_fasta(fasta)}
+
+def load_fasta(filename): # type: (str) -> list[tuple[str, str]]
+    '''
+    Returns the names and sequences for the given fasta file.
+    '''
+    fasta_seqs = []
+    fasta_file = open(filename, 'r')
+    name = ''
+    sequence = ''
+    for line in fasta_file:
+        line = line.strip()
+        if not line:
+            continue
+        if line[0] == '>': # Header line = start of new contig
+            if name:
+                fasta_seqs.append((name, sequence))
+                name = ''
+                sequence = ''
+            name = line[1:]
+        else:
+            sequence += line
+    if name:
+        fasta_seqs.append((name, sequence))
+    return fasta_seqs
 
 
-class BlastHit:
+
+class BlastHit(object):
     '''
     Stores the BLAST hit output mostly verbatim.  However, it does convert the BLAST ranges
     (1-based, inclusive end) to Python ranges (0-based, exclusive end).
@@ -331,11 +430,13 @@ class BlastHit:
         self.bitscore = float(parts[7])
         self.length = int(parts[8])
         self.pident = float(parts[9])
+        self.query_cov = 100.0 * len(parts[11]) / float(parts[10])
 
     def __repr__(self):
         return 'Query: ' + self.qseqid + ' (' + str(self.qstart) + '-' + str(self.qend) + ') ' + \
                'Subject: ' + self.sseqid + ' (' + str(self.sstart) + '-' + str(self.send) + \
-               ', ' + self.strand + ' strand)'
+               ', ' + self.strand + ' strand) ' + \
+               'Cov: ' + str(self.query_cov) + '%, ID: ' + str(self.pident) + '%'
 
     def get_assembly_piece(self, assembly):
         '''
@@ -349,14 +450,53 @@ class BlastHit:
         '''
         return IntRange([(self.qstart, self.qend)])
 
+    def in_assembly_pieces(self, assembly_pieces):
+        '''
+        Returns True if the hit is in (or at least overlaps with) any of the given assembly pieces.
+        '''
+        for piece in assembly_pieces:
+            if piece.overlaps(self.sseqid, self.sstart, self.send):
+                return True
+        return False
 
 
-class KLocusReference:
-    def __init__(self, name, seq):
+
+class GeneBlastHit(BlastHit):
+    '''
+    This class adds a few gene-specific things to the BlastHit class.
+    '''
+    def __init__(self, hit_string):
+        BlastHit.__init__(self, hit_string)
+        gene_name_parts = self.qseqid.split('__')
+        self.cluster = int(gene_name_parts[0])
+        self.gene_name = gene_name_parts[2]
+
+    def conflicts(self, other):
+        '''
+        Returns whether or not this hit conflicts with the other hit.  Conflicting hits overlap on
+        the assembly and are in the same cluster.
+        A hit is not considered to conflict with itself.
+        '''
+        if self is other:
+            return False
+        if self.sseqid != other.sseqid:
+            return False
+        if self.strand != other.strand:
+            return False
+        if self.cluster != other.cluster:
+            return False
+        return self.sstart <= other.send and other.sstart <= self.send
+
+
+
+class KLocusReference(object):
+    def __init__(self, name, seq, table):
         self.name = name
         self.seq = seq
+        self.gene_names = []
         self.blast_hits = []
         self.hit_ranges = IntRange()
+        self.load_genes(table)
 
     def __repr__(self):
         return 'K-locus ' + self.name
@@ -413,9 +553,24 @@ class KLocusReference:
                 latest_hit = hit
         return latest_hit
 
+    def load_genes(self, table_filename): # type: (str) -> None
+        '''
+        Reads the table file which gives the genes in each K-locus and remembers which genes belong
+        in this K-locus.
+        '''
+        table_file = open(table_filename, 'r')
+        for line in table_file:
+            line_parts = line.strip().split('\t')
+            if len(line_parts) != 2:
+                continue
+            k_locus_name = line_parts[0]
+            gene_name = line_parts[1]
+            if k_locus_name == self.name:
+                self.gene_names.append(gene_name)
 
 
-class Assembly:
+
+class Assembly(object):
     def __init__(self, fasta_file):
         '''
         Loads in an assembly and builds a BLAST database for it (if necessary).
@@ -450,7 +605,7 @@ class Assembly:
 
 
 
-class AssemblyPiece:
+class AssemblyPiece(object):
     '''
     This class describes a piece of an assembly: which contig the piece is on and what the range is.
     '''
@@ -508,9 +663,15 @@ class AssemblyPiece:
         else:
             return None
 
+    def overlaps(self, contig_name, start, end):
+        '''
+        Returns whether this assembly piece overlaps with the given parameters.
+        '''
+        return self.contig_name == contig_name and self.start <= end and start <= self.end
 
 
-class IntRange:
+
+class IntRange(object):
     '''
     This class contains one or more integer ranges.  Overlapping ranges will be merged together.
     It stores its ranges in a Python-like fashion where the last value in each range is
@@ -593,7 +754,6 @@ class IntRange:
             if not contained:
                 return False
         return True
-
 
 
 
