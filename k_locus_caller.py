@@ -45,12 +45,8 @@ def main():
         best_k = get_best_k_type_match(assembly, args.k_ref_seqs, k_refs)
         pieces_matching_k_locus, ideal = get_assembly_pieces(assembly, best_k, args)
         save_assembly_pieces_to_file(pieces_matching_k_locus, args.outdir, best_k.name)
-
-        print('Assembly: ' + str(assembly) + ', best K-type match: ' + best_k.name + ', ideal: ' + str(ideal)) # TEMP
-        for piece in pieces_matching_k_locus: # TEMP
-            print(str(piece) + ': ' + piece.get_sequence_short()) # TEMP
-
-        protein_blast(assembly, pieces_matching_k_locus, best_k, args)
+        gene_results = protein_blast(assembly, pieces_matching_k_locus, best_k, args)
+        output_to_table(assembly, best_k, pieces_matching_k_locus, ideal, gene_results)
 
         print() # TEMP
         
@@ -222,29 +218,48 @@ def protein_blast(assembly, pieces_matching_k_locus, k_locus_ref, args):
             filtered_hits = [x for x in filtered_hits if x is not best_hit]
             filtered_hits = cull_conflicting_hits(best_hit, filtered_hits)
     other_hits = cull_all_conflicting_hits(filtered_hits)
+    expected_genes_inside_locus = [x for x in expected_gene_hits if x.in_assembly_pieces(pieces_matching_k_locus)]
+    expected_genes_outside_locus = [x for x in expected_gene_hits if not x.in_assembly_pieces(pieces_matching_k_locus)]
+    other_genes_inside_locus = [x for x in other_hits if x.in_assembly_pieces(pieces_matching_k_locus)]
+    other_genes_outside_locus = [x for x in other_hits if not x.in_assembly_pieces(pieces_matching_k_locus)]
+    return missing_expected_genes, expected_genes_inside_locus, expected_genes_outside_locus, \
+           other_genes_inside_locus, other_genes_outside_locus
 
-    expected_gene_hits_inside_locus = [x for x in expected_gene_hits if x.in_assembly_pieces(pieces_matching_k_locus)]
-    expected_gene_hits_outside_locus = [x for x in expected_gene_hits if not x.in_assembly_pieces(pieces_matching_k_locus)]
-    other_hits_inside_locus = [x for x in other_hits if x.in_assembly_pieces(pieces_matching_k_locus)]
-    other_hits_outside_locus = [x for x in other_hits if not x.in_assembly_pieces(pieces_matching_k_locus)]
+def output_to_table(assembly, best_k, pieces, ideal, gene_results):
+
+    missing, exp_in, exp_out, other_in, other_out = gene_results
 
     # TEMP
     print('\n')
-    print('expected_gene_hits_inside_locus')
-    for hit in expected_gene_hits_inside_locus:
+    print('Assembly: ' + str(assembly) + ', best K-type match: ' + best_k.name + ', ideal: ' + str(ideal))
+    for piece in pieces:
+        print(str(piece) + ': ' + piece.get_sequence_short())
+
+    # TEMP
+    print('\n')
+    print('missing_expected_genes')
+    for gene in missing:
+        print(gene)
+    print('\n')
+    print('expected_genes_inside_locus')
+    for hit in exp_in:
         print(hit)
     print('\n')
-    print('expected_gene_hits_outside_locus')
-    for hit in expected_gene_hits_outside_locus:
+    print('expected_genes_outside_locus')
+    for hit in exp_out:
         print(hit)
     print('\n')
-    print('other_hits_inside_locus')
-    for hit in other_hits_inside_locus:
+    print('other_genes_inside_locus')
+    for hit in other_in:
         print(hit)
     print('\n')
-    print('other_hits_outside_locus')
-    for hit in other_hits_outside_locus:
+    print('other_genes_outside_locus')
+    for hit in other_out:
         print(hit)
+
+
+
+
 
 def get_blast_hits(database, query, genes=False):
     '''
@@ -754,9 +769,6 @@ class IntRange(object):
             if not contained:
                 return False
         return True
-
-
-
 
 
 
