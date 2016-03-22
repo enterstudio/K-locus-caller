@@ -78,6 +78,15 @@ def get_arguments():
                         help='minimum required % coverage for genes')
     parser.add_argument('--min_gene_id', type=float, required=False, default=90.0,
                         help='minimum required % identity for genes')
+    parser.add_argument('--min_assembly_piece', type=int, required=False, default=100,
+                        help='minimum K-locus matching assembly piece to return')
+    parser.add_argument('--gap_fill_size', type=int, required=False, default=100,
+                        help='when separate parts of the assembly are found within this distance, '
+                             'they will be merged')
+
+
+
+
     return parser.parse_args()
 
 def check_for_blast(): # type: () -> bool
@@ -134,8 +143,6 @@ def get_best_k_type_match(assembly, k_refs_fasta, k_refs):
         if hit.qseqid not in k_refs:
             quit_with_error('BLAST hit (' + hit.qseqid + ') not found in K-locus references')
         k_refs[hit.qseqid].add_blast_hit(hit)
-    for k_ref in k_refs.itervalues():
-        k_ref.sort_hits()
     best_k_ref = None
     best_fraction_hit = 0.0
     for k_ref in k_refs.itervalues():
@@ -143,6 +150,7 @@ def get_best_k_type_match(assembly, k_refs_fasta, k_refs):
         if fraction_hit > best_fraction_hit:
             best_fraction_hit = fraction_hit
             best_k_ref = k_ref
+    best_k_ref.clean_up_blast_hits()
     return best_k_ref
 
 def get_assembly_pieces(assembly, k_type, args):
@@ -157,14 +165,8 @@ def get_assembly_pieces(assembly, k_type, args):
         then we just return that one piece of that one contig (ideal scenario).
       * If the first case doesn't apply (either because the start and end are on different contigs
         or because the length doesn't match up), then we gather the assembly pieces as follows:
-          - For each BLAST hit, we keep it if it offers new parts of the K-locus. If, on the other
-            hand it lies entirely within an existing hit (in K-locus positions), we ignore it.
-            Since the BLAST hits are sorted longest to shortest, this strategy will prioritise long
-            hits over short ones.
-          - For all of the BLAST hits we've kept, I merge any overlapping ones (in assembly
-            positions) and return those.
-    The first (ideal) case will result in a '+' for the confidence call.  The second case will
-    result in a '?'.
+        For all of the BLAST hits we've kept, I merge any overlapping ones (in assembly positions)
+        and return those.
     '''
     if not k_type.blast_hits:
         return [], False
@@ -189,17 +191,13 @@ def get_assembly_pieces(assembly, k_type, args):
                                   earliest_hit.strand)
         return [one_piece], True
 
-    # If we got here, then it's the non-ideal case.  Keep BLAST hits that give us new parts of the
-    # K-locus and return the corresponding pieces of the assembly.
-    used_hits = []
-    k_range_so_far = IntRange()
-    for hit in k_type.blast_hits:
-        hit_range = hit.get_query_range()
-        if not k_range_so_far.contains(hit_range):
-            k_range_so_far.merge_in_range(hit_range)
-            used_hits.append(hit)
-    assembly_pieces = [x.get_assembly_piece(assembly) for x in used_hits]
-    return merge_assembly_pieces(assembly_pieces), False
+    # If we got here, then it's the non-ideal case.  Simply gather up the assembly pieces which
+    # correspond to BLAST hits.
+    assembly_pieces = [x.get_assembly_piece(assembly) for x in k_type.blast_hits]
+    merged_pieces = merge_assembly_pieces(assembly_pieces)
+    merged_pieces = [x for x in merged_pieces if x.get_length() >= args.min_assembly_piece]
+    gap_filled_pieces = fill_assembly_piece_gaps(merged_pieces, args.gap_fill_size)
+    return gap_filled_pieces, False
 
 def protein_blast(assembly, pieces_matching_k_locus, k_locus_ref, args):
     '''
@@ -233,7 +231,7 @@ def output_to_table(assembly, best_k, pieces, ideal, gene_results):
     print('\n')
     print('Assembly: ' + str(assembly) + ', best K-type match: ' + best_k.name + ', ideal: ' + str(ideal))
     for piece in pieces:
-        print(str(piece) + ': ' + piece.get_sequence_short())
+        print(piece.get_bandage_range() + '  ' + piece.get_sequence_short())
 
     # TEMP
     print('\n')
@@ -268,7 +266,7 @@ def get_blast_hits(database, query, genes=False):
     if genes:
         command = ['tblastn']
     else:
-        command = ['blastn']
+        command = ['blastn', '-task', 'blastn']
     command += ['-db', database, '-query', query, '-outfmt',
                 '6 qseqid sseqid qstart qend sstart send evalue bitscore length pident qlen qseq']
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -318,19 +316,57 @@ def merge_assembly_pieces(pieces):
     Takes a list of AssemblyPiece objects and returns another list of AssemblyPiece objects where
     the overlapping pieces have been merged.
     '''
-    merged_pieces = []
-    while pieces:
-        merged_piece = pieces[0]
-        unmerged = []
-        for other_piece in pieces[1:]:
-            combined = merged_piece.combine(other_piece)
-            if not combined:
-                unmerged.append(other_piece)
-            else:
-                merged_piece = combined
-        merged_pieces.append(merged_piece)
-        pieces = unmerged
+    while True:
+        merged_pieces = []
+        merge_count = 0
+        while pieces:
+            merged_piece = pieces[0]
+            unmerged = []
+            for other_piece in pieces[1:]:
+                combined = merged_piece.combine(other_piece)
+                if not combined:
+                    unmerged.append(other_piece)
+                else:
+                    merged_piece = combined
+                    merge_count += 1
+            merged_pieces.append(merged_piece)
+            pieces = unmerged
+        if merge_count == 0:
+            break
+        else:
+            pieces = merged_pieces
     return merged_pieces
+
+def fill_assembly_piece_gaps(pieces, max_gap_fill_size):
+    '''
+    This function takes a list of assembly pieces, and if any of them are close enough to each
+    other, the gap will be merged in.
+    It assumes that all given pieces are from the same assembly.
+    '''
+    pieces_by_contig_and_strand = {}
+    fixed_pieces = []
+    for piece in pieces:
+        contig = piece.contig_name
+        strand = piece.strand
+        if (contig, strand) not in pieces_by_contig_and_strand:
+            pieces_by_contig_and_strand[(contig, strand)] = []
+        pieces_by_contig_and_strand[(contig, strand)].append(piece)
+    for (contig, strand), pieces_in_contig_and_strand in pieces_by_contig_and_strand.iteritems():
+        gap_filling_pieces = []
+        sorted_pieces = sorted(pieces_in_contig_and_strand, key=lambda x: x.start)
+        max_end = sorted_pieces[0].end
+        gaps = []
+        for piece in sorted_pieces[1:]:
+            if piece.start > max_end and piece.start - max_end <= max_gap_fill_size:
+                gaps.append((max_end, piece.start))
+            max_end = max(max_end, piece.end)
+        assembly = sorted_pieces[0].assembly
+        for gap in gaps:
+            gap_filling_pieces.append(AssemblyPiece(assembly, contig, gap[0], gap[1], strand))
+        before_merge = pieces_in_contig_and_strand + gap_filling_pieces
+        filled_pieces = merge_assembly_pieces(before_merge)
+        fixed_pieces += filled_pieces
+    return fixed_pieces
 
 def reverse_complement(seq):
     '''
@@ -536,12 +572,6 @@ class KLocusReference(object):
         self.blast_hits = []
         self.hit_ranges = IntRange()
 
-    def sort_hits(self):
-        '''
-        Sorts the BLAST hits from longest to shortest.
-        '''
-        self.blast_hits.sort(key=lambda x: x.length, reverse=True)
-
     def get_fraction_hit_length(self):
         '''
         Returns the fraction of this K-locus which is covered by BLAST hits in the given assembly.
@@ -582,6 +612,26 @@ class KLocusReference(object):
             gene_name = line_parts[1]
             if k_locus_name == self.name:
                 self.gene_names.append(gene_name)
+
+    def clean_up_blast_hits(self):
+        '''
+        This function removes unnecessary BLAST hits from self.blast_hits.
+        For each BLAST hit, we keep it if it offers new parts of the K-locus. If, on the other
+        hand, it lies entirely within an existing hit (in K-locus positions), we ignore it. Since
+        we first sort the BLAST hits longest to shortest, this strategy will prioritise long hits
+        over short ones.
+        '''
+        self.blast_hits.sort(key=lambda x: x.length, reverse=True)
+        kept_hits = []
+        k_range_so_far = IntRange()
+        for hit in self.blast_hits:
+            hit_range = hit.get_query_range()
+            if not k_range_so_far.contains(hit_range):
+                k_range_so_far.merge_in_range(hit_range)
+                kept_hits.append(hit)
+        self.blast_hits = kept_hits
+
+
 
 
 
@@ -638,10 +688,13 @@ class AssemblyPiece(object):
         '''
         Returns a descriptive string for the FASTA header when saving this piece to file.
         '''
-        contig_name_parts = self.contig_name.split('_')
-        contig_number = contig_name_parts[1]
+        contig_number = self.contig_name.split('_')[1]
         return 'NODE_' + contig_number + '_' + str(self.start + 1) + '_to_' + str(self.end) + \
                '_' + self.strand + '_strand'
+
+    def get_bandage_range(self):
+        contig_number = self.contig_name.split('_')[1]
+        return '(' + str(self.start + 1) + ') ' + str(contig_number) + '+ (' + str(self.end) + ')'
 
     def get_sequence(self):
         '''
@@ -652,6 +705,12 @@ class AssemblyPiece(object):
             return seq
         else:
             return reverse_complement(seq)
+
+    def get_length(self):
+        '''
+        Returns the sequence length for this piece.
+        '''
+        return self.end - self.start
 
     def get_sequence_short(self):
         '''
@@ -669,7 +728,7 @@ class AssemblyPiece(object):
         piece.  If they can't, it returns None.
         '''
         if self.contig_name != other.contig_name or self.strand != other.strand:
-            return False
+            return None
         combined = IntRange([(self.start, self.end)])
         combined.add_range(other.start, other.end)
         if len(combined.ranges) == 1:
