@@ -165,41 +165,35 @@ def get_assembly_pieces(assembly, k_type, args):
         For all of the BLAST hits we've kept, I merge any overlapping ones (in assembly positions)
         and return those.
     '''
+    ideal = False
     if not k_type.blast_hits:
-        return [], False
-
-    # Check for the ideal case.
-    earliest_hit = k_type.get_earliest_hit()
-    latest_hit = k_type.get_latest_hit()
-    start = earliest_hit.qstart
-    end = latest_hit.qend
-    k_len = k_type.get_length()
-    good_start = start <= args.start_end_margin
-    good_end = end >= k_len - args.start_end_margin
-    same_contig = earliest_hit.sseqid == latest_hit.sseqid
-    same_strand = earliest_hit.strand == latest_hit.strand
-    proper_length = 100.0 * abs(k_len - (end - start)) / k_len <= args.allowed_length_error
-    if good_start and good_end and same_contig and same_strand and proper_length:
-        if earliest_hit.strand == '+':
-            contig_start, contig_end = earliest_hit.sstart, latest_hit.send
-        else:
-            contig_start, contig_end = latest_hit.sstart, earliest_hit.send
-        one_piece = AssemblyPiece(assembly, earliest_hit.sseqid, contig_start, contig_end,
-                                  earliest_hit.strand)
-        return [one_piece], True
-
-    # If we got here, then it's the non-ideal case.  Simply gather up the assembly pieces which
-    # correspond to BLAST hits.
+        return [], ideal
     assembly_pieces = [x.get_assembly_piece(assembly) for x in k_type.blast_hits]
     merged_pieces = merge_assembly_pieces(assembly_pieces)
     merged_pieces = [x for x in merged_pieces if x.get_length() >= args.min_assembly_piece]
-    gap_filled_pieces = fill_assembly_piece_gaps(merged_pieces, args.gap_fill_size)
-    k_type.identity = get_mean_identity(gap_filled_pieces)
-    return gap_filled_pieces, False
+    if not merged_pieces:
+        return [], ideal
+    final_pieces = fill_assembly_piece_gaps(merged_pieces, args.gap_fill_size)
+    
+    # Now check to see if the biggest assembly piece seems to capture the whole locus.  If so, this
+    # is an ideal match.
+    biggest_piece = sorted(final_pieces, key=lambda x: x.get_length(), reverse=True)[0] 
+    start = biggest_piece.get_earliest_hit_coordinate()
+    end = biggest_piece.get_latest_hit_coordinate()
+    k_len = k_type.get_length()
+    good_start = start <= args.start_end_margin
+    good_end = end >= k_len - args.start_end_margin
+    proper_length = 100.0 * abs(k_len - (end - start)) / k_len <= args.allowed_length_error
+    if good_start and good_end and proper_length:
+        final_pieces = [biggest_piece]
+        ideal = True
+
+    k_type.identity = get_mean_identity(final_pieces)
+    return final_pieces, ideal
 
 def protein_blast(assembly, pieces_matching_k_locus, k_locus_ref, args):
     '''
-    Conducts a BLAST search of all known K-locus proteins.  Returns the BLAST hits for 
+    Conducts a BLAST search of all known K-locus proteins.  Returns the 
     '''
     blast_hits = get_blast_hits(assembly.fasta, args.gene_seqs, genes=True)
     filtered_hits = [x for x in blast_hits if x.query_cov >= args.min_gene_cov and x.pident >= args.min_gene_id]
@@ -598,26 +592,6 @@ class KLocusReference(object):
         '''
         return self.hit_ranges.get_total_length() / len(self.seq)
 
-    def get_earliest_hit(self):
-        '''
-        Returns the BLAST hit that is earliest in the K-locus sequence (lowest start coordinate).
-        '''
-        earliest_hit = self.blast_hits[0]
-        for hit in self.blast_hits[1:]:
-            if hit.qstart < earliest_hit.qstart:
-                earliest_hit = hit
-        return earliest_hit
-
-    def get_latest_hit(self):
-        '''
-        Returns the BLAST hit that is latest in the K-locus sequence (highest end coordinate).
-        '''
-        latest_hit = self.blast_hits[0]
-        for hit in self.blast_hits[1:]:
-            if hit.qend > latest_hit.qend:
-                latest_hit = hit
-        return latest_hit
-
     def load_genes(self, table_filename): # type: (str) -> None
         '''
         Reads the table file which gives the genes in each K-locus and remembers which genes belong
@@ -765,6 +739,22 @@ class AssemblyPiece(object):
         Returns whether this assembly piece overlaps with the given parameters.
         '''
         return self.contig_name == contig_name and self.start <= end and start <= self.end
+
+    def get_earliest_hit_coordinate(self):
+        '''
+        Returns the lowest query start coordinate in the BLAST hits.
+        '''
+        if not self.blast_hits:
+            return None
+        return sorted([x.qstart for x in self.blast_hits])[0]
+
+    def get_latest_hit_coordinate(self):
+        '''
+        Returns the highest query end coordinate in the BLAST hits.
+        '''
+        if not self.blast_hits:
+            return None
+        return sorted([x.qend for x in self.blast_hits])[-1]
 
 
 
