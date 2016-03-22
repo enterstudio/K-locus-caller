@@ -73,19 +73,16 @@ def get_arguments():
     parser.add_argument('--start_end_margin', type=int, required=False, default=10,
                         help='Missing bases at the ends of K-locus allowed in a perfect match.')
     parser.add_argument('--allowed_length_error', type=int, required=False, default=5,
-                        help='% error in K-locus length allowed in a perfect match')
+                        help='%% error in K-locus length allowed in a perfect match')
     parser.add_argument('--min_gene_cov', type=float, required=False, default=90.0,
-                        help='minimum required % coverage for genes')
+                        help='minimum required %% coverage for genes')
     parser.add_argument('--min_gene_id', type=float, required=False, default=90.0,
-                        help='minimum required % identity for genes')
+                        help='minimum required %% identity for genes')
     parser.add_argument('--min_assembly_piece', type=int, required=False, default=100,
                         help='minimum K-locus matching assembly piece to return')
     parser.add_argument('--gap_fill_size', type=int, required=False, default=100,
                         help='when separate parts of the assembly are found within this distance, '
                              'they will be merged')
-
-
-
 
     return parser.parse_args()
 
@@ -137,7 +134,7 @@ def get_best_k_type_match(assembly, k_refs_fasta, k_refs):
     hit to the assembly.
     '''
     for k_ref in k_refs.itervalues():
-        k_ref.clear_hits()
+        k_ref.clear()
     blast_hits = get_blast_hits(assembly.fasta, k_refs_fasta)
     for hit in blast_hits:
         if hit.qseqid not in k_refs:
@@ -197,6 +194,7 @@ def get_assembly_pieces(assembly, k_type, args):
     merged_pieces = merge_assembly_pieces(assembly_pieces)
     merged_pieces = [x for x in merged_pieces if x.get_length() >= args.min_assembly_piece]
     gap_filled_pieces = fill_assembly_piece_gaps(merged_pieces, args.gap_fill_size)
+    k_type.identity = get_mean_identity(gap_filled_pieces)
     return gap_filled_pieces, False
 
 def protein_blast(assembly, pieces_matching_k_locus, k_locus_ref, args):
@@ -229,31 +227,36 @@ def output_to_table(assembly, best_k, pieces, ideal, gene_results):
 
     # TEMP
     print('\n')
-    print('Assembly: ' + str(assembly) + ', best K-type match: ' + best_k.name + ', ideal: ' + str(ideal))
+    print('Assembly: ' + str(assembly))
+    print('    Best K-type match: ' + best_k.name)
+    print('    Ideal: ' + str(ideal))
+    print('    Identity: ' + str(best_k.identity))
     for piece in pieces:
         print(piece.get_bandage_range() + '  ' + piece.get_sequence_short())
 
     # TEMP
-    print('\n')
+    print()
     print('missing_expected_genes')
     for gene in missing:
         print(gene)
-    print('\n')
+    print()
     print('expected_genes_inside_locus')
     for hit in exp_in:
         print(hit)
-    print('\n')
+    print()
     print('expected_genes_outside_locus')
     for hit in exp_out:
         print(hit)
-    print('\n')
+    print()
     print('other_genes_inside_locus')
     for hit in other_in:
         print(hit)
-    print('\n')
+    print()
     print('other_genes_outside_locus')
     for hit in other_out:
         print(hit)
+    print()
+
 
 
 
@@ -367,6 +370,21 @@ def fill_assembly_piece_gaps(pieces, max_gap_fill_size):
         filled_pieces = merge_assembly_pieces(before_merge)
         fixed_pieces += filled_pieces
     return fixed_pieces
+
+def get_mean_identity(pieces):
+    '''
+    Returns the mean identity (weighted by sequence length) for a list of assembly pieces.
+    '''
+    identity_sum = 0.0
+    length_sum = 0
+    for piece in pieces:
+        for hit in piece.blast_hits:
+            length_sum += hit.length
+            identity_sum += hit.length * hit.pident
+    if identity_sum == 0.0:
+        return 0.0
+    else:
+        return identity_sum / length_sum
 
 def reverse_complement(seq):
     '''
@@ -493,7 +511,7 @@ class BlastHit(object):
         '''
         Returns the piece of the assembly which corresponds to this BLAST hit.
         '''
-        return AssemblyPiece(assembly, self.sseqid, self.sstart, self.send, self.strand)
+        return AssemblyPiece(assembly, self.sseqid, self.sstart, self.send, self.strand, [self])
 
     def get_query_range(self):
         '''
@@ -548,6 +566,7 @@ class KLocusReference(object):
         self.blast_hits = []
         self.hit_ranges = IntRange()
         self.load_genes(table)
+        self.identity = 0.0
 
     def __repr__(self):
         return 'K-locus ' + self.name
@@ -565,12 +584,13 @@ class KLocusReference(object):
         self.blast_hits.append(hit)
         self.hit_ranges.add_range(hit.qstart, hit.qend)
 
-    def clear_hits(self):
+    def clear(self):
         '''
         Clears all BLAST hits and the corresponding hit ranges.
         '''
         self.blast_hits = []
         self.hit_ranges = IntRange()
+        self.identity = 0.0
 
     def get_fraction_hit_length(self):
         '''
@@ -674,12 +694,13 @@ class AssemblyPiece(object):
     '''
     This class describes a piece of an assembly: which contig the piece is on and what the range is.
     '''
-    def __init__(self, assembly, contig_name, contig_start, contig_end, strand):
+    def __init__(self, assembly, contig_name, contig_start, contig_end, strand, blast_hits=[]):
         self.assembly = assembly
         self.contig_name = contig_name
         self.start = contig_start
         self.end = contig_end
         self.strand = strand
+        self.blast_hits = blast_hits
 
     def __repr__(self):
         return self.assembly.name + '_' + self.get_header()
@@ -733,7 +754,9 @@ class AssemblyPiece(object):
         combined.add_range(other.start, other.end)
         if len(combined.ranges) == 1:
             new_start, new_end = combined.ranges[0]
-            return AssemblyPiece(self.assembly, self.contig_name, new_start, new_end, self.strand)
+            combined_hits = self.blast_hits + other.blast_hits
+            return AssemblyPiece(self.assembly, self.contig_name, new_start, new_end, self.strand,
+                                 combined_hits)
         else:
             return None
 
