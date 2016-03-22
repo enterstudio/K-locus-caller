@@ -141,11 +141,11 @@ def get_best_k_type_match(assembly, k_refs_fasta, k_refs):
             quit_with_error('BLAST hit (' + hit.qseqid + ') not found in K-locus references')
         k_refs[hit.qseqid].add_blast_hit(hit)
     best_k_ref = None
-    best_fraction_hit = 0.0
+    best_cov = 0.0
     for k_ref in k_refs.itervalues():
-        fraction_hit = k_ref.get_fraction_hit_length()
-        if fraction_hit > best_fraction_hit:
-            best_fraction_hit = fraction_hit
+        cov = k_ref.get_coverage()
+        if cov > best_cov:
+            best_cov = cov
             best_k_ref = k_ref
     best_k_ref.clean_up_blast_hits()
     return best_k_ref
@@ -225,6 +225,7 @@ def output_to_table(assembly, best_k, pieces, ideal, gene_results):
     print('    Best K-type match: ' + best_k.name)
     print('    Ideal: ' + str(ideal))
     print('    Identity: ' + str(best_k.identity))
+    print('    Coverage: ' + str(best_k.get_coverage()))
     for piece in pieces:
         print(piece.get_bandage_range() + '  ' + piece.get_sequence_short())
 
@@ -279,11 +280,11 @@ def get_blast_hits(database, query, genes=False):
 def get_best_hit_for_query(blast_hits, query_name):
     '''
     Given a list of BlastHits, this function returns the best hit for the given query, based on
-    identity.  It returns None if no BLAST hits match that query.
+    bit score.  It returns None if no BLAST hits match that query.
     '''
     matching_hits = [x for x in blast_hits if x.qseqid == query_name]
     if matching_hits:
-        return sorted(matching_hits, key=lambda x: x.pident, reverse=True)[0]
+        return sorted(matching_hits, key=lambda x: x.bitscore, reverse=True)[0]
     else:
         return None
 
@@ -586,11 +587,11 @@ class KLocusReference(object):
         self.hit_ranges = IntRange()
         self.identity = 0.0
 
-    def get_fraction_hit_length(self):
+    def get_coverage(self):
         '''
-        Returns the fraction of this K-locus which is covered by BLAST hits in the given assembly.
+        Returns the % of this K-locus which is covered by BLAST hits in the given assembly.
         '''
-        return self.hit_ranges.get_total_length() / len(self.seq)
+        return 100.0 * self.hit_ranges.get_total_length() / len(self.seq)
 
     def load_genes(self, table_filename): # type: (str) -> None
         '''
