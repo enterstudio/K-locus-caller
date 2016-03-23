@@ -37,6 +37,7 @@ def main():
     args = get_arguments()
     check_for_blast()
     check_files_exist(args.assembly + [args.k_ref_seqs] + [args.k_ref_genes] + [args.gene_seqs])
+    make_paths_absolute(args)
     if not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
     k_refs = load_k_locus_references(args.k_ref_seqs, args.k_ref_genes) # type: dict[str, KLocus]
@@ -47,11 +48,7 @@ def main():
         find_assembly_pieces(assembly, best_k, args)
         save_assembly_pieces_to_file(best_k, assembly, args.outdir)
         protein_blast(assembly, best_k, args)
-        output_to_table(table_file, assembly, best_k)
-
-        print() # TEMP
-        
-
+        output(table_file, assembly, best_k, args)
     sys.exit(0)
 
 
@@ -74,8 +71,6 @@ def get_arguments():
                         help='Output directory')
     parser.add_argument('--start_end_margin', type=int, required=False, default=10,
                         help='Missing bases at the ends of K-locus allowed in a perfect match.')
-    parser.add_argument('--allowed_length_error', type=float, required=False, default=5.0,
-                        help='%% error in K-locus length allowed in a perfect match')
     parser.add_argument('--min_gene_cov', type=float, required=False, default=90.0,
                         help='minimum required %% coverage for genes')
     parser.add_argument('--min_gene_id', type=float, required=False, default=70.0,
@@ -88,6 +83,9 @@ def get_arguments():
     parser.add_argument('--gap_fill_size', type=int, required=False, default=100,
                         help='when separate parts of the assembly are found within this distance, '
                              'they will be merged')
+    parser.add_argument('--foo', action='store_true')
+    parser.add_argument('--verbose', action='store_true',
+                        help='Display detailed information about each assembly in stdout')
 
     return parser.parse_args()
 
@@ -109,6 +107,16 @@ def find_program(name): # type: (str) -> bool
     process = subprocess.Popen(['which', name], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     out, err = process.communicate()
     return bool(out) and not bool(err)
+
+def make_paths_absolute(args):
+    '''
+    Changes the paths given by the user to absolute paths, which are easier to work with later.
+    '''
+    args.assembly = [os.path.abspath(x) for x in args.assembly]
+    args.k_ref_seqs = os.path.abspath(args.k_ref_seqs)
+    args.k_ref_genes = os.path.abspath(args.k_ref_genes)
+    args.gene_seqs = os.path.abspath(args.gene_seqs)
+    args.outdir = os.path.abspath(args.outdir)
 
 def check_files_exist(filenames): # type: (list[str]) -> bool
     '''
@@ -167,40 +175,29 @@ def find_assembly_pieces(assembly, k_locus, args):
     length_filtered_pieces = [x for x in merged_pieces if x.get_length() >= args.min_assembly_piece]
     if not length_filtered_pieces:
         return
-    gap_filled_pieces = fill_assembly_piece_gaps(length_filtered_pieces, args.gap_fill_size)
+    k_locus.assembly_pieces = fill_assembly_piece_gaps(length_filtered_pieces, args.gap_fill_size)
 
     # Now check to see if the biggest assembly piece seems to capture the whole locus.  If so, this
     # is an ideal match.
-    biggest_piece = sorted(gap_filled_pieces, key=lambda x: x.get_length(), reverse=True)[0]
-    start = biggest_piece.get_earliest_hit_coordinate()
-    end = biggest_piece.get_latest_hit_coordinate()
-    k_len = k_locus.get_length()
-    good_start = start <= args.start_end_margin
-    good_end = end >= k_len - args.start_end_margin
-    proper_length = 100.0 * abs(k_len - (end - start)) / k_len <= args.allowed_length_error
-    if good_start and good_end and proper_length:
+    biggest_piece = sorted(k_locus.assembly_pieces, key=lambda x: x.get_length(), reverse=True)[0]
+    start = biggest_piece.earliest_hit_coordinate()
+    end = biggest_piece.latest_hit_coordinate()
+    if good_start_and_end(start, end, k_locus.get_length(), args.start_end_margin):
         k_locus.assembly_pieces = [biggest_piece]
-        k_locus.one_hit_correct_size = True
 
     # If it isn't the ideal case, we still want to check if the start and end of the K-locus were
     # found in the same contig.  If so, fill all gaps in between so we include the entire
     # intervening sequence.
     else:
-        k_locus.one_hit_correct_size = False
-        earliest_piece = sorted(gap_filled_pieces, key=lambda x: x.get_earliest_hit_coordinate())
-        latest_piece = sorted(gap_filled_pieces, key=lambda x: x.get_latest_hit_coordinate())
-        start = earliest_piece.get_earliest_hit_coordinate()
-        end = latest_piece.get_latest_hit_coordinate()
-        good_start = start <= args.start_end_margin
-        good_end = end >= k_len - args.start_end_margin
-        same_contig = earliest_piece.contig_name == latest_piece.contig_name
-        same_strand = earliest_piece.strand == latest_piece.strand
-        start_before_end = start < end
-        if good_start and good_end and same_contig and same_strand and start_before_end:
-            start_to_end_piece = AssemblyPiece(assembly, earliest_piece.contig_name, start,
-                                               end, earliest_piece.strand)
-        k_locus.assembly_pieces = merge_assembly_pieces(gap_filled_pieces + [start_to_end_piece])
-
+        earliest, latest, same_contig_and_strand = k_locus.get_earliest_and_latest_pieces()
+        start = earliest.earliest_hit_coordinate()
+        end = latest.latest_hit_coordinate()
+        if good_start_and_end(start, end, k_locus.get_length(), args.start_end_margin) and \
+        same_contig_and_strand:
+            gap_filling_piece = AssemblyPiece(assembly, earliest.contig_name, start, end,
+                                              earliest.strand)
+            k_locus.assembly_pieces = merge_assembly_pieces(k_locus.assembly_pieces + \
+                                                            [gap_filling_piece])
     k_locus.identity = get_mean_identity(k_locus.assembly_pieces)
 
 def protein_blast(assembly, k_locus, args):
@@ -235,70 +232,91 @@ def create_table_file(outdir):
     headers = []
     headers.append('Assembly')
     headers.append('Best matching K-locus')
-    headers.append('K-locus match quality')
+    headers.append('K-locus match problems')
     headers.append('K-locus match coverage')
     headers.append('K-locus match identity')
+    headers.append('K-locus match length discrepancy')
     headers.append('Expected genes found in K-locus')
     headers.append('Expected genes found in K-locus, details')
-    headers.append('Missing expected genes')
-    headers.append('Expected genes found outside K-locus')
-    headers.append('Expected genes found outside K-locus, details')
+    headers.append('Expected genes not found in K-locus')
     headers.append('Other genes found in K-locus')
     headers.append('Other genes found in K-locus, details')
+    headers.append('Expected genes found outside K-locus')
+    headers.append('Expected genes found outside K-locus, details')
     headers.append('Other genes found outside K-locus')
     headers.append('Other genes found outside K-locus, details')
     table.write('\t'.join(headers))
     table.write('\n')
     return table
 
-def output_to_table(table, assembly, k_locus):
+def output(table, assembly, k_locus, args):
     '''
-    Writes a line to the output table describing all that we've learned about the given K-locus.
+    Writes a line to the output table describing all that we've learned about the given K-locus and
+    writes to stdout as well.
     '''
+    uncertainty_chars = k_locus.get_match_uncertainty_chars()
+    length_discrepancy = k_locus.get_length_discrepancy()
+    if length_discrepancy:
+        length_discrepancy_str = str(length_discrepancy) + ' bp'
+        if length_discrepancy > 0:
+            length_discrepancy_str = '+' + length_discrepancy_str
+    else:
+        length_discrepancy_str = 'n/a'
+    expected_genes_str = str(len(k_locus.expected_hits_inside_locus)) + ' / ' + \
+                         str(len(k_locus.gene_names))
+    missing_genes_str = str(len(k_locus.missing_expected_genes)) + ' / ' + \
+                        str(len(k_locus.gene_names))
+
     line = []
     line.append(assembly.name)
     line.append(k_locus.name)
-    line.append(k_locus.get_match_quality())
+    line.append(uncertainty_chars)
+    line.append('%.2f' % k_locus.get_coverage() + '%')
+    line.append('%.2f' % k_locus.identity + '%')
+    line.append(length_discrepancy_str)
+    line.append(expected_genes_str)
+    line.append(get_gene_info_string(k_locus.expected_hits_inside_locus))
+    line.append(k_locus.get_missing_gene_string())
+    line.append(str(len(k_locus.other_hits_inside_locus)))
+    line.append(get_gene_info_string(k_locus.other_hits_inside_locus))
+    line.append(str(len(k_locus.expected_hits_outside_locus)))
+    line.append(get_gene_info_string(k_locus.expected_hits_outside_locus))
+    line.append(str(len(k_locus.other_hits_outside_locus)))
+    line.append(get_gene_info_string(k_locus.other_hits_outside_locus))
+
     table.write('\t'.join(line))
     table.write('\n')
 
-    # TEMP
-    print('\n')
-    print('Assembly: ' + str(assembly))
-    print('    Best K-type match: ' + k_locus.name)
-    print('    Ideal: ' + str(k_locus.one_hit_correct_size))
-    print('    Identity: ' + str(k_locus.identity))
-    print('    Coverage: ' + str(k_locus.get_coverage()))
-    for piece in k_locus.assembly_pieces:
-        print(piece.get_bandage_range() + '  ' + piece.get_sequence_short())
-
-    # TEMP
-    print()
-    print('missing_expected_genes')
-    for gene in k_locus.missing_expected_genes:
-        print(gene)
-    print()
-    print('expected_hits_inside_locus')
-    for hit in k_locus.expected_hits_inside_locus:
-        print(hit)
-    print()
-    print('expected_hits_outside_locus')
-    for hit in k_locus.expected_hits_outside_locus:
-        print(hit)
-    print()
-    print('other_hits_inside_locus')
-    for hit in k_locus.other_hits_inside_locus:
-        print(hit)
-    print()
-    print('other_hits_outside_locus')
-    for hit in k_locus.other_hits_outside_locus:
-        print(hit)
-    print()
-
-
-
-
-
+    if not args.verbose:
+        print(assembly.name + ': ' + k_locus.name + uncertainty_chars)
+    if args.verbose:
+        print('Assembly: ' + assembly.name)
+        print('    Best K-type match: ' + k_locus.name)
+        print('    Uncertainties: ' + uncertainty_chars)
+        print('    Coverage: ' + str(k_locus.get_coverage()))
+        print('    Identity: ' + str(k_locus.identity))
+        print('    Length discrepancy: ' + str(k_locus.get_length_discrepancy()))
+        print('    K-locus assembly pieces: ' + str(k_locus.get_length_discrepancy()))
+        for piece in k_locus.assembly_pieces:
+            print('        ' + piece.get_header() + ', ' + piece.get_sequence_short())
+        print('    Expected genes found in K-locus: ' + expected_genes_str)
+        for hit in k_locus.expected_hits_inside_locus:
+            print('        ' + str(hit))
+        print('    Expected genes missing in K-locus: ' + missing_genes_str)
+        for gene in k_locus.missing_expected_genes:
+            print('        ' + str(gene))
+        print('    Other genes found in K-locus: ' + str(len(k_locus.other_hits_inside_locus)))
+        for hit in k_locus.other_hits_inside_locus:
+            print('        ' + str(hit))
+        print('    Expected genes found outside K-locus: ' + \
+              str(len(k_locus.expected_hits_outside_locus)))
+        for hit in k_locus.expected_hits_outside_locus:
+            print('        ' + str(hit))
+        print('    Other genes found outside K-locus: ' + \
+              str(len(k_locus.other_hits_outside_locus)))
+        for hit in k_locus.other_hits_outside_locus:
+            print('        ' + str(hit))
+        print()
 
 def get_blast_hits(database, query, genes=False):
     '''
@@ -513,6 +531,22 @@ def load_fasta(filename): # type: (str) -> list[tuple[str, str]]
         fasta_seqs.append((name, sequence))
     return fasta_seqs
 
+def good_start_and_end(start, end, k_length, allowed_margin):
+    '''
+    Checks whether the given start and end coordinates are within the accepted margin of error.
+    '''
+    good_start = start <= allowed_margin
+    good_end = end >= k_length - allowed_margin
+    start_before_end = start < end
+    return good_start and good_end and start_before_end
+
+def get_gene_info_string(gene_hit_list):
+    '''
+    Returns a single comma-delimited string summarising the gene hits in the given list.
+    '''
+    return ';'.join([x.allele_name + ',' + str(x.pident) + '%' for x in gene_hit_list])
+
+
 
 
 class BlastHit(object):
@@ -582,10 +616,9 @@ class GeneBlastHit(BlastHit):
 
     def conflicts(self, other):
         '''
-        Returns whether or not this hit conflicts with the other hit.  Conflicting hits overlap on
-        the assembly and are in the same cluster.
-        Ifthe other blast hit has the exact same target range as the hit to keep, it conflicts,
-        regardless of their cluster.
+        Returns whether or not this hit conflicts with the other hit.
+        If the hits are in the same cluster, then any overlap between them counts as a conflict.
+        If the hits are in different clusters, then it takes 90% overlap to conflict.
         A hit is not considered to conflict with itself.
         '''
         if self is other:
@@ -594,11 +627,20 @@ class GeneBlastHit(BlastHit):
             return False
         if self.strand != other.strand:
             return False
-        if self.sstart == other.sstart and self.send == other.send:
-            return True
+
+        max_start = max(self.sstart, other.sstart)
+        min_end = min(self.send, other.send)
+        if max_start < min_end:
+            overlap = min_end - max_start
+        else:
+            overlap = 0
+
         if self.cluster != other.cluster:
-            return False
-        return self.sstart <= other.send and other.sstart <= self.send
+            min_length = min(self.send - self.sstart, other.send - other.sstart)
+            frac_overlap = overlap / min_length
+            return frac_overlap > 0.9
+        else:
+            return overlap > 0
 
 
 
@@ -612,7 +654,6 @@ class KLocus(object):
         self.blast_hits = []
         self.hit_ranges = IntRange()
         self.assembly_pieces = []
-        self.one_hit_correct_size = False
         self.identity = 0.0
         self.expected_hits_inside_locus = []
         self.missing_expected_genes = []
@@ -644,7 +685,6 @@ class KLocus(object):
         self.blast_hits = []
         self.hit_ranges = IntRange()
         self.assembly_pieces = []
-        self.one_hit_correct_size = False
         self.identity = 0.0
         self.expected_hits_inside_locus = []
         self.missing_expected_genes = []
@@ -691,33 +731,58 @@ class KLocus(object):
                 kept_hits.append(hit)
         self.blast_hits = kept_hits
 
-    def get_match_quality(self):
+    def get_match_uncertainty_chars(self):
         '''
         Returns the character code which indicates uncertainty with how this K-locus was found in
         the current assembly.
-        ''  means an ideal match: Whole K-locus found in one piece of an expected size, no expected
-            genes are missing and no unexpected genes are in the locus.
-        'W' means that the K-locus was in one piece with a start and an end, but not of an expected
-            size.
-        '?' means the K-locus was found in multiple pieces.
+        '?' means the K-locus was found in multiple discontinuous assembly pieces.
         '-' means that one or more expected genes were missing.
-        '+' means that one or more expected genes were missing.
+        '+' means that one or more additional genes were found in the K-locus assembly parts.
         '*' means that at least one of the expected genes in the K-locus is low identity.
         '''
-        quality_str = ''
-        if self.one_hit_correct_size:
-            quality_str += '+'
-        else:
-            quality_str += '?'
+        uncertainty_chars = ''
+        if len(self.assembly_pieces) > 1:
+            uncertainty_chars += '?'
         if self.missing_expected_genes:
-            quality_str += '-'
+            uncertainty_chars += '-'
+        if self.other_hits_inside_locus:
+            uncertainty_chars += '+'
         if not all([x.over_identity_threshold for x in self.expected_hits_inside_locus]):
-            quality_str += '*'
-        return quality_str
+            uncertainty_chars += '*'
+        return uncertainty_chars
 
-        
+    def get_length_discrepancy(self):
+        '''
+        Returns an integer of the base discrepancy between the K-locus in the assembly and the
+        reference K-locus sequence.
+        E.g. if the assembly match was 5 bases shorter than the reference, this returns -5.
+        This function only applies to cases where the K-locus was found in a single contig.  In
+        other cases, it returns None.
+        '''
+        earliest_piece, latest_piece, same_contig_and_strand = self.get_earliest_and_latest_pieces()
+        if not same_contig_and_strand:
+            return None
+        a_start = earliest_piece.start
+        a_end = earliest_piece.end
+        k_start = earliest_piece.earliest_hit_coordinate()
+        k_end = latest_piece.latest_hit_coordinate()
+        expected_length = k_end - k_start
+        actual_length = a_end - a_start
+        return actual_length - expected_length
 
+    def get_earliest_and_latest_pieces(self):
+        '''
+        Returns the AssemblyPiece with the earliest coordinate (closest to the K-locus start) and
+        the AssemblyPiece with the latest coordinate (closest to the K-locus end)
+        '''
+        earliest_piece = sorted(self.assembly_pieces, key=lambda x: x.earliest_hit_coordinate())[0]
+        latest_piece = sorted(self.assembly_pieces, key=lambda x: x.latest_hit_coordinate())[-1]
+        same_contig_and_strand = earliest_piece.contig_name == latest_piece.contig_name and \
+                                 earliest_piece.strand == latest_piece.strand
+        return earliest_piece, latest_piece, same_contig_and_strand
 
+    def get_missing_gene_string(self):
+        return ';'.join([x.split('__')[2] for x in self.missing_expected_genes])
 
 
 
@@ -727,7 +792,7 @@ class Assembly(object):
         Loads in an assembly and builds a BLAST database for it (if necessary).
         '''
         self.fasta = fasta_file
-        self.name = os.path.splitext(fasta_file)[0]
+        self.name = os.path.splitext(os.path.basename(fasta_file))[0]
         self.contigs = {x[0]: x[1] for x in load_fasta(fasta_file)} # key = name, value = sequence
         if not self.blast_database_exists():
             self.make_blast_database()
@@ -832,7 +897,7 @@ class AssemblyPiece(object):
         '''
         return self.contig_name == contig_name and self.start <= end and start <= self.end
 
-    def get_earliest_hit_coordinate(self):
+    def earliest_hit_coordinate(self):
         '''
         Returns the lowest query start coordinate in the BLAST hits.
         '''
@@ -840,7 +905,7 @@ class AssemblyPiece(object):
             return None
         return sorted([x.qstart for x in self.blast_hits])[0]
 
-    def get_latest_hit_coordinate(self):
+    def latest_hit_coordinate(self):
         '''
         Returns the highest query end coordinate in the BLAST hits.
         '''
