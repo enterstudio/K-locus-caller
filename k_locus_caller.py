@@ -46,9 +46,9 @@ def main():
         assembly = Assembly(fasta_file)
         best_k = get_best_k_type_match(assembly, args.k_ref_seqs, k_refs)
         find_assembly_pieces(assembly, best_k, args)
-        save_assembly_pieces_to_file(best_k, assembly, args.outdir)
         protein_blast(assembly, best_k, args)
         output(table_file, assembly, best_k, args)
+        save_assembly_pieces_to_file(best_k, assembly, args.outdir)
     sys.exit(0)
 
 
@@ -467,10 +467,13 @@ def save_assembly_pieces_to_file(k_locus, assembly, outdir):
     '''
     if not k_locus.assembly_pieces:
         return
-    fasta_file_name = os.path.join(outdir, assembly.name + '_' + k_locus.name + '.fasta')
+    assembly_and_locus = assembly.name + '_' + k_locus.name
+    fasta_file_name = os.path.join(outdir, assembly_and_locus + '.fasta')
     fasta_file = open(fasta_file_name, 'w')
+    uncertainties = k_locus.get_match_uncertainty_words()
     for piece in k_locus.assembly_pieces:
-        fasta_file.write('>' + piece.get_header() + '\n')
+        fasta_file.write('>' + assembly_and_locus + '_' + piece.get_header() + ' ' + \
+                         uncertainties + '\n')
         fasta_file.write(add_line_breaks_to_sequence(piece.get_sequence(), 60))
 
 def add_line_breaks_to_sequence(sequence, length):
@@ -574,8 +577,8 @@ class BlastHit(object):
         self.query_cov = 100.0 * len(parts[11]) / float(parts[10])
 
     def __repr__(self):
-        return 'Query: ' + self.qseqid + ' (' + str(self.qstart) + '-' + str(self.qend) + ') ' + \
-               'Subject: ' + self.sseqid + ' (' + str(self.sstart) + '-' + str(self.send) + \
+        return self.qseqid + ' (' + str(self.qstart) + '-' + str(self.qend) + ') ' + \
+               'Contig: ' + self.sseqid + ' (' + str(self.sstart) + '-' + str(self.send) + \
                ', ' + self.strand + ' strand) ' + \
                'Cov: ' + str(self.query_cov) + '%, ID: ' + str(self.pident) + '%'
 
@@ -747,6 +750,22 @@ class KLocus(object):
         if not all([x.over_identity_threshold for x in self.expected_hits_inside_locus]):
             uncertainty_chars += '*'
         return uncertainty_chars
+
+    def get_match_uncertainty_words(self):
+        '''
+        Returns a string with similar info as get_match_uncertainty_chars, but uses words instead
+        of single characters.
+        '''
+        uncertainty_words = []
+        if len(self.assembly_pieces) > 1:
+            uncertainty_words.append('broken')
+        if self.missing_expected_genes:
+            uncertainty_words.append('incomplete')
+        if self.other_hits_inside_locus:
+            uncertainty_words.append('extra_genes')
+        if not all([x.over_identity_threshold for x in self.expected_hits_inside_locus]):
+            uncertainty_words.append('low_gene_identity')
+        return ' '.join(uncertainty_words)
 
     def get_length_discrepancy(self):
         '''
