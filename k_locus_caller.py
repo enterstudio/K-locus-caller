@@ -83,7 +83,6 @@ def get_arguments():
     parser.add_argument('--gap_fill_size', type=int, required=False, default=100,
                         help='when separate parts of the assembly are found within this distance, '
                              'they will be merged')
-    parser.add_argument('--foo', action='store_true')
     parser.add_argument('--verbose', action='store_true',
                         help='Display detailed information about each assembly in stdout')
 
@@ -624,8 +623,6 @@ class GeneBlastHit(BlastHit):
         if self is other:
             return False
         if self.sseqid != other.sseqid:
-            return False
-        if self.strand != other.strand:
             return False
 
         max_start = max(self.sstart, other.sstart)
