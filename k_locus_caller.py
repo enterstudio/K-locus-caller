@@ -155,48 +155,53 @@ def get_best_k_type_match(assembly, k_refs_fasta, k_refs):
     best_k_ref.clean_up_blast_hits()
     return best_k_ref
 
-def find_assembly_pieces(assembly, k_type, args):
+def find_assembly_pieces(assembly, k_locus, args):
     '''
     This function uses the BLAST hits in the given K-type to find the corresponding pieces of the
-    given assembly.  It saves in the KLocus: a list of the pieces and a boolean value to indicate
-    whether an ideal match was found.
-
-    It uses the following logic:
-      * If the start and end (with a bit of wiggle room) of the K-locus both hit to the same
-        contig, and the distance between matches the K-locus size (with a bit of wiggle room),
-        then we just return that one piece of that one contig (ideal scenario).
-      * If the first case doesn't apply (either because the start and end are on different contigs
-        or because the length doesn't match up), then we gather the assembly pieces as follows:
-        For all of the BLAST hits we've kept, I merge any overlapping ones (in assembly positions)
-        and return those.
+    given assembly.  It saves its results in the KLocus
     '''
-    if not k_type.blast_hits:
+    if not k_locus.blast_hits:
         return
-    assembly_pieces = [x.get_assembly_piece(assembly) for x in k_type.blast_hits]
+    assembly_pieces = [x.get_assembly_piece(assembly) for x in k_locus.blast_hits]
     merged_pieces = merge_assembly_pieces(assembly_pieces)
-    merged_pieces = [x for x in merged_pieces if x.get_length() >= args.min_assembly_piece]
-    if not merged_pieces:
+    length_filtered_pieces = [x for x in merged_pieces if x.get_length() >= args.min_assembly_piece]
+    if not length_filtered_pieces:
         return
-    final_pieces = fill_assembly_piece_gaps(merged_pieces, args.gap_fill_size)
-    
+    gap_filled_pieces = fill_assembly_piece_gaps(length_filtered_pieces, args.gap_fill_size)
+
     # Now check to see if the biggest assembly piece seems to capture the whole locus.  If so, this
     # is an ideal match.
-    biggest_piece = sorted(final_pieces, key=lambda x: x.get_length(), reverse=True)[0] 
+    biggest_piece = sorted(gap_filled_pieces, key=lambda x: x.get_length(), reverse=True)[0]
     start = biggest_piece.get_earliest_hit_coordinate()
     end = biggest_piece.get_latest_hit_coordinate()
-    k_len = k_type.get_length()
+    k_len = k_locus.get_length()
     good_start = start <= args.start_end_margin
     good_end = end >= k_len - args.start_end_margin
     proper_length = 100.0 * abs(k_len - (end - start)) / k_len <= args.allowed_length_error
     if good_start and good_end and proper_length:
-        final_pieces = [biggest_piece]
-        ideal = True
-    else:
-        ideal = False
+        k_locus.assembly_pieces = [biggest_piece]
+        k_locus.one_hit_correct_size = True
 
-    k_type.identity = get_mean_identity(final_pieces)
-    k_type.assembly_pieces = final_pieces
-    k_type.one_hit_correct_size = ideal
+    # If it isn't the ideal case, we still want to check if the start and end of the K-locus were
+    # found in the same contig.  If so, fill all gaps in between so we include the entire
+    # intervening sequence.
+    else:
+        k_locus.one_hit_correct_size = False
+        earliest_piece = sorted(gap_filled_pieces, key=lambda x: x.get_earliest_hit_coordinate())
+        latest_piece = sorted(gap_filled_pieces, key=lambda x: x.get_latest_hit_coordinate())
+        start = earliest_piece.get_earliest_hit_coordinate()
+        end = latest_piece.get_latest_hit_coordinate()
+        good_start = start <= args.start_end_margin
+        good_end = end >= k_len - args.start_end_margin
+        same_contig = earliest_piece.contig_name == latest_piece.contig_name
+        same_strand = earliest_piece.strand == latest_piece.strand
+        start_before_end = start < end
+        if good_start and good_end and same_contig and same_strand and start_before_end:
+            start_to_end_piece = AssemblyPiece(assembly, earliest_piece.contig_name, start,
+                                               end, earliest_piece.strand)
+        k_locus.assembly_pieces = merge_assembly_pieces(gap_filled_pieces + [start_to_end_piece])
+
+    k_locus.identity = get_mean_identity(k_locus.assembly_pieces)
 
 def protein_blast(assembly, k_locus, args):
     '''
@@ -688,12 +693,13 @@ class KLocus(object):
 
     def get_match_quality(self):
         '''
-        Returns the character code which indicates uncertainty with how this K-locus was found in the current
-        assembly.
-        ''  means an ideal match: Whole K-locus found in one piece, all expected genes found in the
-            locus and no unexpected genes found in the locus.
-        '?' means the K-locus was either found in multiple pieces.
-        'W' means that the K-locus was in one piece with a start and an end, but not of an expected size.
+        Returns the character code which indicates uncertainty with how this K-locus was found in
+        the current assembly.
+        ''  means an ideal match: Whole K-locus found in one piece of an expected size, no expected
+            genes are missing and no unexpected genes are in the locus.
+        'W' means that the K-locus was in one piece with a start and an end, but not of an expected
+            size.
+        '?' means the K-locus was found in multiple pieces.
         '-' means that one or more expected genes were missing.
         '+' means that one or more expected genes were missing.
         '*' means that at least one of the expected genes in the K-locus is low identity.
