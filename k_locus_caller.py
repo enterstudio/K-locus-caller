@@ -246,6 +246,7 @@ def create_table_file(outdir):
     headers.append('Other genes found outside K-locus, details')
     table.write('\t'.join(headers))
     table.write('\n')
+    table.flush()
     return table
 
 def output(table, assembly, k_locus, args):
@@ -254,25 +255,20 @@ def output(table, assembly, k_locus, args):
     writes to stdout as well.
     '''
     uncertainty_chars = k_locus.get_match_uncertainty_chars()
-    length_discrepancy = k_locus.get_length_discrepancy()
-    if length_discrepancy:
-        length_discrepancy_str = str(length_discrepancy) + ' bp'
-        if length_discrepancy > 0:
-            length_discrepancy_str = '+' + length_discrepancy_str
-    else:
-        length_discrepancy_str = 'n/a'
     expected_genes_str = str(len(k_locus.expected_hits_inside_locus)) + ' / ' + \
                          str(len(k_locus.gene_names))
     missing_genes_str = str(len(k_locus.missing_expected_genes)) + ' / ' + \
                         str(len(k_locus.gene_names))
+    coverage_str = '%.2f' % k_locus.get_coverage() + '%'
+    identity_str = '%.2f' % k_locus.identity + '%'
 
     line = []
     line.append(assembly.name)
     line.append(k_locus.name)
     line.append(uncertainty_chars)
-    line.append('%.2f' % k_locus.get_coverage() + '%')
-    line.append('%.2f' % k_locus.identity + '%')
-    line.append(length_discrepancy_str)
+    line.append(coverage_str)
+    line.append(identity_str)
+    line.append(k_locus.get_length_discrepancy_string())
     line.append(expected_genes_str)
     line.append(get_gene_info_string(k_locus.expected_hits_inside_locus))
     line.append(k_locus.get_missing_gene_string())
@@ -285,6 +281,7 @@ def output(table, assembly, k_locus, args):
 
     table.write('\t'.join(line))
     table.write('\n')
+    table.flush()
 
     if not args.verbose:
         print(assembly.name + ': ' + k_locus.name + uncertainty_chars)
@@ -292,10 +289,10 @@ def output(table, assembly, k_locus, args):
         print('Assembly: ' + assembly.name)
         print('    Best K-type match: ' + k_locus.name)
         print('    Uncertainties: ' + uncertainty_chars)
-        print('    Coverage: ' + str(k_locus.get_coverage()))
-        print('    Identity: ' + str(k_locus.identity))
-        print('    Length discrepancy: ' + str(k_locus.get_length_discrepancy()))
-        print('    K-locus assembly pieces: ' + str(k_locus.get_length_discrepancy()))
+        print('    Coverage: ' + coverage_str)
+        print('    Identity: ' + identity_str)
+        print('    Length discrepancy: ' + k_locus.get_length_discrepancy_string())
+        print('    K-locus assembly pieces:')
         for piece in k_locus.assembly_pieces:
             print('        ' + piece.get_header() + ', ' + piece.get_sequence_short())
         print('    Expected genes found in K-locus: ' + expected_genes_str)
@@ -577,10 +574,10 @@ class BlastHit(object):
         self.query_cov = 100.0 * len(parts[11]) / float(parts[10])
 
     def __repr__(self):
-        return self.qseqid + ' (' + str(self.qstart) + '-' + str(self.qend) + ') ' + \
+        return self.qseqid + ' (' + str(self.qstart) + '-' + str(self.qend) + ')   ' + \
                'Contig: ' + self.sseqid + ' (' + str(self.sstart) + '-' + str(self.send) + \
-               ', ' + self.strand + ' strand) ' + \
-               'Cov: ' + str(self.query_cov) + '%, ID: ' + str(self.pident) + '%'
+               ', ' + self.strand + ' strand)   ' + \
+               'Cov: ' + '%.2f' % self.query_cov + '%, ID: ' + '%.2f' % self.pident + '%'
 
     def get_assembly_piece(self, assembly):
         '''
@@ -785,6 +782,19 @@ class KLocus(object):
         expected_length = k_end - k_start
         actual_length = a_end - a_start
         return actual_length - expected_length
+
+    def get_length_discrepancy_string(self):
+        '''
+        Returns the length discrepancy, not as an integer but as a string with a sign and units.
+        '''
+        length_discrepancy = self.get_length_discrepancy()
+        if length_discrepancy is None:
+            return 'n/a'
+        length_discrepancy_string = str(length_discrepancy) + ' bp'
+        if length_discrepancy > 0:
+            length_discrepancy_string = '+' + length_discrepancy_string
+        return length_discrepancy_string
+
 
     def get_earliest_and_latest_pieces(self):
         '''
