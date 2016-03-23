@@ -39,14 +39,15 @@ def main():
     check_files_exist(args.assembly + [args.k_ref_seqs] + [args.k_ref_genes] + [args.gene_seqs])
     if not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
-    k_refs = load_k_locus_references(args.k_ref_seqs, args.k_ref_genes) # type: dict[str, KLocusReference]
+    k_refs = load_k_locus_references(args.k_ref_seqs, args.k_ref_genes) # type: dict[str, KLocus]
+    table_file = create_table_file(args.outdir)
     for fasta_file in args.assembly:
         assembly = Assembly(fasta_file)
         best_k = get_best_k_type_match(assembly, args.k_ref_seqs, k_refs)
-        pieces_matching_k_locus, ideal = get_assembly_pieces(assembly, best_k, args)
-        save_assembly_pieces_to_file(pieces_matching_k_locus, args.outdir, best_k.name)
-        gene_results = protein_blast(assembly, pieces_matching_k_locus, best_k, args)
-        output_to_table(assembly, best_k, pieces_matching_k_locus, ideal, gene_results)
+        find_assembly_pieces(assembly, best_k, args)
+        save_assembly_pieces_to_file(best_k, assembly, args.outdir)
+        protein_blast(assembly, best_k, args)
+        output_to_table(table_file, assembly, best_k)
 
         print() # TEMP
         
@@ -59,7 +60,8 @@ def get_arguments():
     '''
     Specifies the command line arguments required by the script.
     '''
-    parser = argparse.ArgumentParser(description='K-locus caller')
+    parser = argparse.ArgumentParser(description='K-locus caller',
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('-a', '--assembly', nargs='+', type=str, required=True,
                         help='Fasta file(s) for Klebsiella assemblies')
     parser.add_argument('-k', '--k_ref_seqs', type=str, required=True,
@@ -72,12 +74,15 @@ def get_arguments():
                         help='Output directory')
     parser.add_argument('--start_end_margin', type=int, required=False, default=10,
                         help='Missing bases at the ends of K-locus allowed in a perfect match.')
-    parser.add_argument('--allowed_length_error', type=int, required=False, default=5,
+    parser.add_argument('--allowed_length_error', type=float, required=False, default=5.0,
                         help='%% error in K-locus length allowed in a perfect match')
     parser.add_argument('--min_gene_cov', type=float, required=False, default=90.0,
                         help='minimum required %% coverage for genes')
-    parser.add_argument('--min_gene_id', type=float, required=False, default=90.0,
+    parser.add_argument('--min_gene_id', type=float, required=False, default=70.0,
                         help='minimum required %% identity for genes')
+    parser.add_argument('--low_gene_id', type=float, required=False, default=95.0,
+                        help='genes with a %% identity below this value will be flagged as low '
+                             'identity')
     parser.add_argument('--min_assembly_piece', type=int, required=False, default=100,
                         help='minimum K-locus matching assembly piece to return')
     parser.add_argument('--gap_fill_size', type=int, required=False, default=100,
@@ -127,7 +132,7 @@ def quit_with_error(message): # type: (str) -> None
     sys.exit(1)
 
 def get_best_k_type_match(assembly, k_refs_fasta, k_refs):
-    # type: (Assembly, str, dict[str, KLocusReference]) -> KLocusReference
+    # type: (Assembly, str, dict[str, KLocus]) -> KLocus
     '''
     Searches for all known K-types in the given assembly and returns the best match.
     Best match is defined as the K-type for which the largest fraction of the K-type has a BLAST
@@ -150,11 +155,11 @@ def get_best_k_type_match(assembly, k_refs_fasta, k_refs):
     best_k_ref.clean_up_blast_hits()
     return best_k_ref
 
-def get_assembly_pieces(assembly, k_type, args):
+def find_assembly_pieces(assembly, k_type, args):
     '''
     This function uses the BLAST hits in the given K-type to find the corresponding pieces of the
-    given assembly.  It returns a list of the pieces and a boolean value to indicate whether an
-    ideal match was found.
+    given assembly.  It saves in the KLocus: a list of the pieces and a boolean value to indicate
+    whether an ideal match was found.
 
     It uses the following logic:
       * If the start and end (with a bit of wiggle room) of the K-locus both hit to the same
@@ -165,14 +170,13 @@ def get_assembly_pieces(assembly, k_type, args):
         For all of the BLAST hits we've kept, I merge any overlapping ones (in assembly positions)
         and return those.
     '''
-    ideal = False
     if not k_type.blast_hits:
-        return [], ideal
+        return
     assembly_pieces = [x.get_assembly_piece(assembly) for x in k_type.blast_hits]
     merged_pieces = merge_assembly_pieces(assembly_pieces)
     merged_pieces = [x for x in merged_pieces if x.get_length() >= args.min_assembly_piece]
     if not merged_pieces:
-        return [], ideal
+        return
     final_pieces = fill_assembly_piece_gaps(merged_pieces, args.gap_fill_size)
     
     # Now check to see if the biggest assembly piece seems to capture the whole locus.  If so, this
@@ -187,68 +191,102 @@ def get_assembly_pieces(assembly, k_type, args):
     if good_start and good_end and proper_length:
         final_pieces = [biggest_piece]
         ideal = True
+    else:
+        ideal = False
 
     k_type.identity = get_mean_identity(final_pieces)
-    return final_pieces, ideal
+    k_type.assembly_pieces = final_pieces
+    k_type.one_hit_correct_size = ideal
 
-def protein_blast(assembly, pieces_matching_k_locus, k_locus_ref, args):
+def protein_blast(assembly, k_locus, args):
     '''
-    Conducts a BLAST search of all known K-locus proteins.  Returns the 
+    Conducts a BLAST search of all known K-locus proteins.  Stores the results in the KLocus
+    object.
     '''
-    blast_hits = get_blast_hits(assembly.fasta, args.gene_seqs, genes=True)
-    filtered_hits = [x for x in blast_hits if x.query_cov >= args.min_gene_cov and x.pident >= args.min_gene_id]
-    expected_gene_hits = []
-    missing_expected_genes = []
-    for expected_gene in k_locus_ref.gene_names:
-        best_hit = get_best_hit_for_query(filtered_hits, expected_gene)
+    hits = get_blast_hits(assembly.fasta, args.gene_seqs, genes=True)
+    hits = [x for x in hits if x.query_cov >= args.min_gene_cov and x.pident >= args.min_gene_id]
+    expected_hits = []
+    for expected_gene in k_locus.gene_names:
+        best_hit = get_best_hit_for_query(hits, expected_gene)
         if not best_hit:
-            missing_expected_genes.append(expected_gene)
+            k_locus.missing_expected_genes.append(expected_gene)
         else:
-            expected_gene_hits.append(best_hit)
-            filtered_hits = [x for x in filtered_hits if x is not best_hit]
-            filtered_hits = cull_conflicting_hits(best_hit, filtered_hits)
-    other_hits = cull_all_conflicting_hits(filtered_hits)
-    expected_genes_inside_locus = [x for x in expected_gene_hits if x.in_assembly_pieces(pieces_matching_k_locus)]
-    expected_genes_outside_locus = [x for x in expected_gene_hits if not x.in_assembly_pieces(pieces_matching_k_locus)]
-    other_genes_inside_locus = [x for x in other_hits if x.in_assembly_pieces(pieces_matching_k_locus)]
-    other_genes_outside_locus = [x for x in other_hits if not x.in_assembly_pieces(pieces_matching_k_locus)]
-    return missing_expected_genes, expected_genes_inside_locus, expected_genes_outside_locus, \
-           other_genes_inside_locus, other_genes_outside_locus
+            best_hit.over_identity_threshold = best_hit.pident >= args.low_gene_id
+            expected_hits.append(best_hit)
+            hits = [x for x in hits if x is not best_hit]
+            hits = cull_conflicting_hits(best_hit, hits)
+    other_hits = cull_all_conflicting_hits(hits)
+    k_locus.expected_hits_inside_locus = [x for x in expected_hits if x.in_assembly_pieces(k_locus.assembly_pieces)]
+    k_locus.expected_hits_outside_locus = [x for x in expected_hits if not x.in_assembly_pieces(k_locus.assembly_pieces)]
+    k_locus.other_hits_inside_locus = [x for x in other_hits if x.in_assembly_pieces(k_locus.assembly_pieces)]
+    k_locus.other_hits_outside_locus = [x for x in other_hits if not x.in_assembly_pieces(k_locus.assembly_pieces)]
 
-def output_to_table(assembly, best_k, pieces, ideal, gene_results):
+def create_table_file(outdir):
+    '''
+    Creates the table file and writes a header line.
+    '''
+    table_path = os.path.join(outdir, 'k-locus_results.txt')
+    table = open(table_path, 'w')
+    headers = []
+    headers.append('Assembly')
+    headers.append('Best matching K-locus')
+    headers.append('K-locus match quality')
+    headers.append('K-locus match coverage')
+    headers.append('K-locus match identity')
+    headers.append('Expected genes found in K-locus')
+    headers.append('Expected genes found in K-locus, details')
+    headers.append('Missing expected genes')
+    headers.append('Expected genes found outside K-locus')
+    headers.append('Expected genes found outside K-locus, details')
+    headers.append('Other genes found in K-locus')
+    headers.append('Other genes found in K-locus, details')
+    headers.append('Other genes found outside K-locus')
+    headers.append('Other genes found outside K-locus, details')
+    table.write('\t'.join(headers))
+    table.write('\n')
+    return table
 
-    missing, exp_in, exp_out, other_in, other_out = gene_results
+def output_to_table(table, assembly, k_locus):
+    '''
+    Writes a line to the output table describing all that we've learned about the given K-locus.
+    '''
+    line = []
+    line.append(assembly.name)
+    line.append(k_locus.name)
+    line.append(k_locus.get_match_quality())
+    table.write('\t'.join(line))
+    table.write('\n')
 
     # TEMP
     print('\n')
     print('Assembly: ' + str(assembly))
-    print('    Best K-type match: ' + best_k.name)
-    print('    Ideal: ' + str(ideal))
-    print('    Identity: ' + str(best_k.identity))
-    print('    Coverage: ' + str(best_k.get_coverage()))
-    for piece in pieces:
+    print('    Best K-type match: ' + k_locus.name)
+    print('    Ideal: ' + str(k_locus.one_hit_correct_size))
+    print('    Identity: ' + str(k_locus.identity))
+    print('    Coverage: ' + str(k_locus.get_coverage()))
+    for piece in k_locus.assembly_pieces:
         print(piece.get_bandage_range() + '  ' + piece.get_sequence_short())
 
     # TEMP
     print()
     print('missing_expected_genes')
-    for gene in missing:
+    for gene in k_locus.missing_expected_genes:
         print(gene)
     print()
-    print('expected_genes_inside_locus')
-    for hit in exp_in:
+    print('expected_hits_inside_locus')
+    for hit in k_locus.expected_hits_inside_locus:
         print(hit)
     print()
-    print('expected_genes_outside_locus')
-    for hit in exp_out:
+    print('expected_hits_outside_locus')
+    for hit in k_locus.expected_hits_outside_locus:
         print(hit)
     print()
-    print('other_genes_inside_locus')
-    for hit in other_in:
+    print('other_hits_inside_locus')
+    for hit in k_locus.other_hits_inside_locus:
         print(hit)
     print()
-    print('other_genes_outside_locus')
-    for hit in other_out:
+    print('other_hits_outside_locus')
+    for hit in k_locus.other_hits_outside_locus:
         print(hit)
     print()
 
@@ -293,6 +331,8 @@ def cull_conflicting_hits(hit_to_keep, blast_hits):
     This function returns a (potentially) reduced set of BLAST hits which excludes BLAST hits that
     overlap with the hit to keep (same part of assembly) and are in the same cluster as the hit to
     keep.
+    If any of the other blast hits have the exact same target range as the hit to keep, they'll be
+    culled, regardless of their cluster.
     '''
     return [x for x in blast_hits if not x.conflicts(hit_to_keep)]
 
@@ -398,17 +438,16 @@ def complement_base(base):
     reverse = 'TACGtacgYRSWMKyrswmkVHDBvhdbNn.-?N'
     return reverse[forward.find(base)]
 
-def save_assembly_pieces_to_file(assembly_pieces, outdir, k_locus_name):
+def save_assembly_pieces_to_file(k_locus, assembly, outdir):
     '''
     Creates a single FASTA file for all of the assembly pieces.
     Assumes all assembly pieces are from the same assembly.
     '''
-    if not assembly_pieces:
+    if not k_locus.assembly_pieces:
         return
-    assembly_name = assembly_pieces[0].assembly.name
-    fasta_file_name = os.path.join(outdir, assembly_name + '_' + k_locus_name + '.fasta')
+    fasta_file_name = os.path.join(outdir, assembly.name + '_' + k_locus.name + '.fasta')
     fasta_file = open(fasta_file_name, 'w')
-    for piece in assembly_pieces:
+    for piece in k_locus.assembly_pieces:
         fasta_file.write('>' + piece.get_header() + '\n')
         fasta_file.write(add_line_breaks_to_sequence(piece.get_sequence(), 60))
 
@@ -437,13 +476,13 @@ def line_iterator(string_with_line_breaks):
         yield string_with_line_breaks[prev_newline + 1:next_newline]
         prev_newline = next_newline
 
-def load_k_locus_references(fasta, table): # type: (str, str) -> dict[str, KLocusReference]
+def load_k_locus_references(fasta, table): # type: (str, str) -> dict[str, KLocus]
     '''
     Returns a dictionary of:
       key = K-locus name
-      value = KLocusReference object
+      value = KLocus object
     '''
-    return {seq[0]: KLocusReference(seq[0], seq[1], table) for seq in load_fasta(fasta)}
+    return {seq[0]: KLocus(seq[0], seq[1], table) for seq in load_fasta(fasta)}
 
 def load_fasta(filename): # type: (str) -> list[tuple[str, str]]
     '''
@@ -533,12 +572,15 @@ class GeneBlastHit(BlastHit):
         BlastHit.__init__(self, hit_string)
         gene_name_parts = self.qseqid.split('__')
         self.cluster = int(gene_name_parts[0])
-        self.gene_name = gene_name_parts[2]
+        self.allele_name = gene_name_parts[2]
+        self.over_identity_threshold = False
 
     def conflicts(self, other):
         '''
         Returns whether or not this hit conflicts with the other hit.  Conflicting hits overlap on
         the assembly and are in the same cluster.
+        Ifthe other blast hit has the exact same target range as the hit to keep, it conflicts,
+        regardless of their cluster.
         A hit is not considered to conflict with itself.
         '''
         if self is other:
@@ -547,21 +589,31 @@ class GeneBlastHit(BlastHit):
             return False
         if self.strand != other.strand:
             return False
+        if self.sstart == other.sstart and self.send == other.send:
+            return True
         if self.cluster != other.cluster:
             return False
         return self.sstart <= other.send and other.sstart <= self.send
 
 
 
-class KLocusReference(object):
+
+class KLocus(object):
     def __init__(self, name, seq, table):
         self.name = name
         self.seq = seq
         self.gene_names = []
+        self.load_genes(table)
         self.blast_hits = []
         self.hit_ranges = IntRange()
-        self.load_genes(table)
+        self.assembly_pieces = []
+        self.one_hit_correct_size = False
         self.identity = 0.0
+        self.expected_hits_inside_locus = []
+        self.missing_expected_genes = []
+        self.expected_hits_outside_locus = []
+        self.other_hits_inside_locus = []
+        self.other_hits_outside_locus = []
 
     def __repr__(self):
         return 'K-locus ' + self.name
@@ -581,11 +633,19 @@ class KLocusReference(object):
 
     def clear(self):
         '''
-        Clears all BLAST hits and the corresponding hit ranges.
+        Clears everything in the KLocus object relevant to a particular assembly - gets it ready
+        for the next assembly.
         '''
         self.blast_hits = []
         self.hit_ranges = IntRange()
+        self.assembly_pieces = []
+        self.one_hit_correct_size = False
         self.identity = 0.0
+        self.expected_hits_inside_locus = []
+        self.missing_expected_genes = []
+        self.expected_hits_outside_locus = []
+        self.other_hits_inside_locus = []
+        self.other_hits_outside_locus = []
 
     def get_coverage(self):
         '''
@@ -625,6 +685,31 @@ class KLocusReference(object):
                 k_range_so_far.merge_in_range(hit_range)
                 kept_hits.append(hit)
         self.blast_hits = kept_hits
+
+    def get_match_quality(self):
+        '''
+        Returns the character code which indicates uncertainty with how this K-locus was found in the current
+        assembly.
+        ''  means an ideal match: Whole K-locus found in one piece, all expected genes found in the
+            locus and no unexpected genes found in the locus.
+        '?' means the K-locus was either found in multiple pieces.
+        'W' means that the K-locus was in one piece with a start and an end, but not of an expected size.
+        '-' means that one or more expected genes were missing.
+        '+' means that one or more expected genes were missing.
+        '*' means that at least one of the expected genes in the K-locus is low identity.
+        '''
+        quality_str = ''
+        if self.one_hit_correct_size:
+            quality_str += '+'
+        else:
+            quality_str += '?'
+        if self.missing_expected_genes:
+            quality_str += '-'
+        if not all([x.over_identity_threshold for x in self.expected_hits_inside_locus]):
+            quality_str += '*'
+        return quality_str
+
+        
 
 
 
