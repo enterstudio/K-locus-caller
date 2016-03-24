@@ -546,6 +546,28 @@ def get_gene_info_string(gene_hit_list):
     return ';'.join([x.allele_name + ',' + str(x.pident) + '%' for x in gene_hit_list])
 
 
+def is_contig_name_spades_format(contig_name):
+    '''
+    Returns whether or not the contig name appears to be in the SPAdes/Velvet format.
+    Example: NODE_5_length_150905_cov_4.42519
+    '''
+    contig_name_parts = contig_name.split('_')
+    return len(contig_name_parts) > 5 and contig_name_parts[0] == 'NODE' and \
+           contig_name_parts[2] == 'length' and contig_name_parts[4] == 'cov'
+
+
+def get_nice_contig_name(contig_name):
+    '''
+    For a contig with a SPAdes/Velvet format, this function returns a simplified string that is
+    just NODE_XX where XX is the contig number.
+    For any other format, this function trims off everything following the first whitespace.
+    '''
+    if is_contig_name_spades_format(contig_name):
+        return 'NODE_' + contig_name.split('_')[1]
+    else:
+        return contig_name.split()[0]
+
+
 
 
 class BlastHit(object):
@@ -866,13 +888,19 @@ class AssemblyPiece(object):
         '''
         Returns a descriptive string for the FASTA header when saving this piece to file.
         '''
-        contig_number = self.contig_name.split('_')[1]
-        return 'NODE_' + contig_number + '_' + str(self.start + 1) + '_to_' + str(self.end) + \
+        nice_contig_name = get_nice_contig_name(self.contig_name)
+        return nice_contig_name + '_' + str(self.start + 1) + '_to_' + str(self.end) + \
                '_' + self.strand + '_strand'
 
     def get_bandage_range(self):
-        contig_number = self.contig_name.split('_')[1]
-        return '(' + str(self.start + 1) + ') ' + str(contig_number) + '+ (' + str(self.end) + ')'
+        '''
+        Returns the assembly piece in a Bandage path format.
+        '''
+        if is_contig_name_spades_format(self.contig_name):
+            name = self.contig_name.split('_')[1]
+        else:
+            name = self.contig_name.split()[0]
+        return '(' + str(self.start + 1) + ') ' + name + '+ (' + str(self.end) + ')'
 
     def get_sequence(self):
         '''
@@ -904,6 +932,8 @@ class AssemblyPiece(object):
         '''
         If this assembly piece and the other can be combined, this function returns the combined
         piece.  If they can't, it returns None.
+        To be able to combine, pieces must be overlapping or directly adjacent and on the same
+        strand.
         '''
         if self.contig_name != other.contig_name or self.strand != other.strand:
             return None
@@ -921,7 +951,7 @@ class AssemblyPiece(object):
         '''
         Returns whether this assembly piece overlaps with the given parameters.
         '''
-        return self.contig_name == contig_name and self.start <= end and start <= self.end
+        return self.contig_name == contig_name and self.start < end and start < self.end
 
     def earliest_hit_coordinate(self):
         '''
@@ -986,9 +1016,9 @@ class IntRange(object):
         '''
         fixed_ranges = []
         for int_range in self.ranges:
-            if int_range[1] < int_range[0]:
+            if int_range[0] > int_range[1]:
                 fixed_ranges.append((int_range[1], int_range[0]))
-            else:
+            elif int_range[0] < int_range[1]:
                 fixed_ranges.append(int_range)
         starts_ends = [(x[0], 1) for x in fixed_ranges]
         starts_ends += [(x[1], -1) for x in fixed_ranges]
