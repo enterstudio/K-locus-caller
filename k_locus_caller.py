@@ -40,6 +40,7 @@ def main():
     make_paths_absolute(args)
     if not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
+    check_inputs(args)
     k_refs = load_k_locus_references(args.k_ref_seqs, args.k_ref_genes) # type: dict[str, KLocus]
     table_file = create_table_file(args.outdir)
     for fasta_file in args.assembly:
@@ -137,6 +138,56 @@ def quit_with_error(message): # type: (str) -> None
     '''
     print('Error:', message, file=sys.stderr)
     sys.exit(1)
+
+def check_inputs(args):
+    '''
+    Makes sure that:
+      1) the gene names are in the correct format
+      2) the gene names in the table are present in the FASTA file
+      3) each K locus sequence has at least one gene in the table
+      4) the K loci in the table are present in the FASTA file
+    If any of these are not true, it quits with an error message.
+    '''
+    k_names_from_fasta = set([x[0] for x in load_fasta(args.k_ref_seqs)])
+    if not k_names_from_fasta:
+        quit_with_error('No K-locus reference sequences found in ' +
+                        os.path.basename(args.k_ref_seqs))
+    gene_names_from_fasta = set([x[0] for x in load_fasta(args.gene_seqs)])
+    if not gene_names_from_fasta:
+        quit_with_error('No gene sequences found in ' + os.path.basename(args.gene_seqs))
+    k_names_from_table = set()
+    gene_names_from_table = set()
+    table_file = open(args.k_ref_genes, 'r')
+    for line in table_file:
+        line_parts = line.strip().split('\t')
+        if len(line_parts) == 2:
+            k_names_from_table.add(line_parts[0])
+            gene_names_from_table.add(line_parts[1])
+    if not k_names_from_table or not gene_names_from_table:
+        quit_with_error('No K-locus or gene names found in ' + 
+                        os.path.basename(args.k_ref_genes))
+    missing_genes = gene_names_from_table.difference(gene_names_from_fasta)
+    if missing_genes:
+        quit_with_error('These genes are present in the table but not in the gene FASTA '
+                        'file: ' + ', '.join(list(missing_genes)))
+    missing_k_loci = k_names_from_table.difference(k_names_from_fasta)
+    if missing_k_loci:
+        quit_with_error('These K loci are present in the table but not in the K locus '
+                        'FASTA file: ' + ', '.join(list(missing_k_loci)))
+    missing_k_loci = k_names_from_fasta.difference(k_names_from_table)
+    if missing_k_loci:
+        quit_with_error('These K loci are present in the FASTA file but not in the '
+                        'table: ' + ', '.join(list(missing_k_loci)))
+    for gene_name in gene_names_from_table:
+        gene_name_parts = gene_name.split('__')
+        if len(gene_name_parts) < 3:
+            quit_with_error('This gene name is not in the correct format: ' + gene_name)
+        try:
+            int(gene_name_parts[0])
+        except ValueError:
+            quit_with_error('This gene\'s cluster number is not a number: ' + gene_name)
+        if not gene_name_parts[2]:
+            quit_with_error('This gene is missing an allele name: ' + gene_name)
 
 def get_best_k_type_match(assembly, k_refs_fasta, k_refs):
     # type: (Assembly, str, dict[str, KLocus]) -> KLocus
