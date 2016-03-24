@@ -206,7 +206,6 @@ class TestAssemblyPiece(unittest.TestCase):
     def test_hit_coordinates(self):
         assembly = Assembly(os.path.join(test_dir, 'test_assembly_spades_format.fasta'))
         piece = AssemblyPiece(assembly, 'NODE_5_length_150905_cov_4.42519_ID_15485', 376, 684, '+')
-        # piece.blast_hits += BlastHit('qseqid sseqid qstart qend sstart send evalue bitscore length pident qlen qseq')
         piece.blast_hits.append(BlastHit('gene1\tNODE_5_length_150905_cov_4.42519_ID_15485\t10\t90\t400\t480\t2e-40\t12345\t81\t99.4\t81\tACGT'))
         piece.blast_hits.append(BlastHit('gene1\tNODE_5_length_150905_cov_4.42519_ID_15485\t5\t95\t400\t480\t2e-40\t12345\t81\t99.4\t81\tACGT'))
         piece.blast_hits.append(BlastHit('gene1\tNODE_5_length_150905_cov_4.42519_ID_15485\t200\t290\t400\t480\t2e-40\t12345\t81\t99.4\t81\tACGT'))
@@ -232,6 +231,33 @@ class TestKLocus(unittest.TestCase):
         self.assertEqual(k1.gene_names[19], '18__K1__K1-CDS9-wzy__00060')
 
         
+
+class TestFunctions(unittest.TestCase):
+
+    def test_fill_assembly_piece_gaps(self):
+        assembly = Assembly(os.path.join(test_dir, 'test_assembly_spades_format.fasta'))
+        piece_1 = AssemblyPiece(assembly, 'NODE_5_length_150905_cov_4.42519_ID_15485', 300, 600, '+')
+        piece_2 = AssemblyPiece(assembly, 'NODE_5_length_150905_cov_4.42519_ID_15485', 700, 900, '+')
+        piece_3 = AssemblyPiece(assembly, 'NODE_5_length_150905_cov_4.42519_ID_15485', 950, 1000, '+')
+        gap_filled_pieces = fill_assembly_piece_gaps([piece_1, piece_2, piece_3], 10)
+        self.assertEqual(len(gap_filled_pieces), 3)
+        gap_filled_pieces = fill_assembly_piece_gaps([piece_1, piece_2, piece_3], 49)
+        self.assertEqual(len(gap_filled_pieces), 3)
+        gap_filled_pieces = fill_assembly_piece_gaps([piece_1, piece_2, piece_3], 50)
+        self.assertEqual(len(gap_filled_pieces), 2)
+        self.assertEqual(gap_filled_pieces[0].start, 300)
+        self.assertEqual(gap_filled_pieces[0].end, 600)
+        self.assertEqual(gap_filled_pieces[1].start, 700)
+        self.assertEqual(gap_filled_pieces[1].end, 1000)
+        gap_filled_pieces = fill_assembly_piece_gaps([piece_1, piece_2, piece_3], 99)
+        self.assertEqual(len(gap_filled_pieces), 2)
+        gap_filled_pieces = fill_assembly_piece_gaps([piece_1, piece_2, piece_3], 100)
+        self.assertEqual(len(gap_filled_pieces), 1)
+        self.assertEqual(gap_filled_pieces[0].start, 300)
+        self.assertEqual(gap_filled_pieces[0].end, 1000)
+        delete_blast_databases()
+
+
 
 if __name__ == '__main__':
     unittest.main()
