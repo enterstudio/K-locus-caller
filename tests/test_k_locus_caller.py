@@ -110,6 +110,9 @@ class TestAssembly(unittest.TestCase):
         self.assertEqual(assembly_other.name, 'test_assembly_other_format')
         self.assertEqual(len(assembly_spades.contigs), 4)
         self.assertEqual(len(assembly_other.contigs), 4)
+        self.assertTrue('contig_1' in assembly_other.contigs)
+        self.assertTrue('contig_2' in assembly_other.contigs)
+        self.assertTrue('contig_2 extra header parts' not in assembly_other.contigs)
         delete_blast_databases()
 
 

@@ -520,14 +520,14 @@ def load_fasta(filename): # type: (str) -> list[tuple[str, str]]
             continue
         if line[0] == '>': # Header line = start of new contig
             if name:
-                fasta_seqs.append((name, sequence))
+                fasta_seqs.append((name.split()[0], sequence))
                 name = ''
                 sequence = ''
             name = line[1:]
         else:
             sequence += line
     if name:
-        fasta_seqs.append((name, sequence))
+        fasta_seqs.append((name.split()[0], sequence))
     return fasta_seqs
 
 def good_start_and_end(start, end, k_length, allowed_margin):
