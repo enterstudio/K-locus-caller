@@ -2,21 +2,33 @@
 '''
 K-locus caller
 
-This is a tool which reports information about the K-type for Klebsiella genome assemblies.
+This is a tool which reports information about the K-type for Klebsiella genome assemblies.  It
+will help a user to decide whether their Klebsiella sample has a known or novel K-type, and if
+novel, how similar it is to a known type.
 
-As input, this script takes:
-  * One or more Klebsiella genome assemblies
-  * Reference nucleotide sequences for known K-types
-  * A multi-fasta of protein sequences for genes in the known K-types
+This script needs the following input files to run:
+* A FASTA file with nucleotide sequences for your known K-types
+* A FASTA file with proteins sequences for the genes in your known K-types
+* A tab-delimited file which specifies which genes go in which K-types
+* One or more Klebsiella assemblies in FASTA format
 
-For each sample, it will report:
-  * Which K-type best matches the sample
-  * Information about the best K-type match (e.g. % identity, whether it was in one piece, etc.)
-  * The DNA sequence(s) in the sample which align to the best K-type match
-  * The location and identity of K-locus proteins in the sample
+Example command:
+k_locus_caller.py -a path/to/assemblies/*.fasta -k k_loci_refs.fasta -g k_loci_gene_list.txt
+    -s genes.fasta -o output_directory
 
-This information will help a user to decide whether their sample has a known K-type or a novel
-one, and if novel, how similar it is to a known type.
+For each input assembly file, the script will identify the closest known K-type and report
+information about the corresponding K-locus genes.
+
+It generates the following output files:
+* A FASTA file for each input assembly with the nucleotide sequences matching the closest K-type
+* A table summarising the results for all input assemblies
+
+Character codes indicate problems with the K-locus match:
+* `?` indicates that the match was not in a single piece, possible due to a poor match or
+      discontiguous assembly
+* `-` indicates that genes expected in the K-locus were not found
+* `+` indicates that extra genes were found in the K-locus
+* `*` indicates that one or more expected genes was found but with low identity
 
 Author: Ryan Wick
 email: rrwick@gmail.com
@@ -647,9 +659,8 @@ class BlastHit(object):
         self.query_cov = 100.0 * len(parts[11]) / float(parts[10])
 
     def __repr__(self):
-        return self.qseqid + ' (' + str(self.qstart) + '-' + str(self.qend) + ')   ' + \
-               'Contig: ' + self.sseqid + ' (' + str(self.sstart) + '-' + str(self.send) + \
-               ', ' + self.strand + ' strand)   ' + \
+        return self.qseqid + ', Contig: ' + self.sseqid + ' (' + str(self.sstart) + '-' + \
+               str(self.send) + ', ' + self.strand + ' strand), ' + \
                'Cov: ' + '%.2f' % self.query_cov + '%, ID: ' + '%.2f' % self.pident + '%'
 
     def get_assembly_piece(self, assembly):
@@ -697,14 +708,12 @@ class GeneBlastHit(BlastHit):
             return False
         if self.sseqid != other.sseqid:
             return False
-
         max_start = max(self.sstart, other.sstart)
         min_end = min(self.send, other.send)
         if max_start < min_end:
             overlap = min_end - max_start
         else:
             overlap = 0
-
         if self.cluster != other.cluster:
             min_length = min(self.send - self.sstart, other.send - other.sstart)
             frac_overlap = overlap / min_length
