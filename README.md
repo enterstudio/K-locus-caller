@@ -155,7 +155,7 @@ If run without the `-v` or `--verbose` option, this tool will give detailed info
 
 This tool produces a single tab-delimited table summarising the results of all input assemblies. It has the following columns:
 * **Assembly**: the name of the input assembly, taken from the assembly filename.
-* **Best match K locus**: the K locus type which most closely matches the assembly, based on BLAST coverage.
+* **Best match locus**: the K locus type which most closely matches the assembly, based on BLAST coverage.
 * **Problems**: characters indicating issues with the K locus match. An absence of any such characters indicates a very good match.
   * `?` = the match was not in a single piece, possible due to a poor match or discontiguous assembly.
   * `-` = genes expected in the K locus were not found.
@@ -164,15 +164,15 @@ This tool produces a single tab-delimited table summarising the results of all i
 * **Coverage**: the percent of the K locus reference which BLAST found in the assembly.
 * **Identity**: the nucleotide identity of the BLAST hits between K locus reference and assembly.
 * **Length discrepancy**: the difference in length between the K locus match and the corresponding part of the assembly. Only available if the K locus was found in a single piece (i.e. the `?` problem character is not used).
-* **Expected genes in K locus**: a fraction indicating how many of the genes in the best matching K locus were found in the K locus part of the assembly.
-* **Expected genes in K locus, details**: gene names and percent identity (from the BLAST hits) for the expected genes found in the K locus part of the assembly.
+* **Expected genes in locus**: a fraction indicating how many of the genes in the best matching K locus were found in the K locus part of the assembly.
+* **Expected genes in locus, details**: gene names and percent identity (from the BLAST hits) for the expected genes found in the K locus part of the assembly.
 * **Missing expected genes**: a string listing the gene names of expected genes that were not found.
-* **Other genes in K locus**: the number of unexpected genes (genes from K loci other than the best match) which were found in the K locus part of the assembly.
-* **Other genes in K locus, details**: gene names and percent identity (from the BLAST hits) for the other genes found in the K locus part of the assembly.
-* **Expected genes outside K locus**: the number of expected genes which were found in the assembly but not in the K locus part of the assembly (usually zero)
-* **Expected genes outside K locus, details**: gene names and percent identity (from the BLAST hits) for the expected genes found outside the K locus part of the assembly.
-* **Other genes outside K locus**: the number of unexpected genes (genes from K loci other than the best match) which were found outside the K locus part of the assembly.
-* **Other genes outside K locus, details**: gene names and percent identity (from the BLAST hits) for the other genes found outside the K locus part of the assembly.
+* **Other genes in locus**: the number of unexpected genes (genes from K loci other than the best match) which were found in the K locus part of the assembly.
+* **Other genes in locus, details**: gene names and percent identity (from the BLAST hits) for the other genes found in the K locus part of the assembly.
+* **Expected genes outside locus**: the number of expected genes which were found in the assembly but not in the K locus part of the assembly (usually zero)
+* **Expected genes outside locus, details**: gene names and percent identity (from the BLAST hits) for the expected genes found outside the K locus part of the assembly.
+* **Other genes outside locus**: the number of unexpected genes (genes from K loci other than the best match) which were found outside the K locus part of the assembly.
+* **Other genes outside locus, details**: gene names and percent identity (from the BLAST hits) for the other genes found outside the K locus part of the assembly.
 
 #### K locus matching sequences
 
@@ -185,7 +185,7 @@ These examples show what the tool's results might look like in the output table.
 
 #### Very close match
 
-Assembly | Best match K locus | Problems | Coverage | Identity | Length discrepancy | Expected genes in K locus | Expected genes in K locus, details | Missing expected genes | Other genes in K locus | Other genes in K locus, details | Expected genes outside K locus | Expected genes outside K locus, details | Other genes outside K locus | Other genes outside K locus, details
+Assembly | Best match locus | Problems | Coverage | Identity | Length discrepancy | Expected genes in locus | Expected genes in locus, details | Missing expected genes | Other genes in locus | Other genes in locus, details | Expected genes outside locus | Expected genes outside locus, details | Other genes outside locus | Other genes outside K locus, details
 :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---:
 assembly_1 | K1 |  | 99.94% | 99.81% | -22 bp | 20 / 20 | ... |  | 0 |  | 0 |  | 2 | ...
 
@@ -195,7 +195,7 @@ Overall, this is a nice, solid match for K1.
 
 #### More distant match
 
-Assembly | Best match K locus | Problems | Coverage | Identity | Length discrepancy | Expected genes in K locus | Expected genes in K locus, details | Missing expected genes | Other genes in K locus | Other genes in K locus, details | Expected genes outside K locus | Expected genes outside K locus, details | Other genes outside K locus | Other genes outside K locus, details
+Assembly | Best match locus | Problems | Coverage | Identity | Length discrepancy | Expected genes in locus | Expected genes in locus, details | Missing expected genes | Other genes in locus | Other genes in locus, details | Expected genes outside locus | Expected genes outside locus, details | Other genes outside locus | Other genes outside K locus, details
 :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---:
 assembly_2 | K1 | * | 99.84% | 95.32% | +97 bp | 20 / 20 | ... |  | 0 |  | 0 |  | 2 | ...
 
@@ -205,7 +205,7 @@ Our sample still almost certainly has a K locus type of K1, but it has diverged 
 
 #### Broken assembly
 
-Assembly | Best match K locus | Problems | Coverage | Identity | Length discrepancy | Expected genes in K locus | Expected genes in K locus, details | Missing expected genes | Other genes in K locus | Other genes in K locus, details | Expected genes outside K locus | Expected genes outside K locus, details | Other genes outside K locus | Other genes outside K locus, details
+Assembly | Best match locus | Problems | Coverage | Identity | Length discrepancy | Expected genes in locus | Expected genes in locus, details | Missing expected genes | Other genes in locus | Other genes in locus, details | Expected genes outside locus | Expected genes outside locus, details | Other genes outside locus | Other genes outside K locus, details
 :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---:
 assembly_3 | K2 | ?- | 99.95% | 98.38% | n/a | 17 / 18 | ... | K2-CDS17-manB | 0 |  | 0 |  | 1 | ...
 
@@ -215,7 +215,7 @@ In cases like this, it is worth examining the case in more detail outside of thi
 
 #### Poor match
 
-Assembly | Best match K locus | Problems | Coverage | Identity | Length discrepancy | Expected genes in K locus | Expected genes in K locus, details | Missing expected genes | Other genes in K locus | Other genes in K locus, details | Expected genes outside K locus | Expected genes outside K locus, details | Other genes outside K locus | Other genes outside K locus, details
+Assembly | Best match locus | Problems | Coverage | Identity | Length discrepancy | Expected genes in locus | Expected genes in locus, details | Missing expected genes | Other genes in locus | Other genes in locus, details | Expected genes outside locus | Expected genes outside locus, details | Other genes outside locus | Other genes outside K locus, details
 :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---:
 assembly_4 | K3 | ?-* | 77.94% | 83.60% | n/a | 15 / 20 | ... | ... | 0 |  | 0 |  | 5 | ...
 
