@@ -158,7 +158,7 @@ For each input assembly, this tool produces a FASTA file of the region(s) of the
 
 Assembly | Best matching K-locus | K-locus match problems | K-locus match coverage | K-locus match identity | K-locus match length discrepancy | Expected genes found in K-locus | Expected genes found in K-locus, details | Expected genes not found in K-locus | Other genes found in K-locus | Other genes found in K-locus, details | Expected genes found outside K-locus | Expected genes found outside K-locus, details | Other genes found outside K-locus | Other genes found outside K-locus, details
 --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | ---
-assembly_1 | K1 |  | 99.94% | 99.81% | -22 bp | 20 / 20 | K1-CDS1-galF,100.0%;K1-CDS10-wcsS,100.0%;K1-CDS11-wcsT,100.0%;K1-CDS12-gmd,100.0%;K1-CDS13-wcaG,99.71%;K1-CDS14-wcaH,100.0%;K1-CDS15-wcaI,99.51%;K1-CDS16-wcaJ,99.79%;K1-CDS17-gnd,99.79%;K1-CDS18-manC,98.95%;K1-CDS19-manB,100.0%;K1-CDS2-cpsACP,97.14%;K1-CDS20-ugd,100.0%;K1-CDS3-wzi,99.79%;K1-CDS4-wza,100.0%;K1-CDS5-wzb,100.0%;K1-CDS6-wzc,100.0%;K1-CDS7-wzx,100.0%;K1-CDS8-wclY,99.72%;K1-CDS9-wzy,100.0% |  | 0 |  | 0 |  | 2 | KN5-CDS12-,74.79%;KN5-CDS13-,73.01%
+assembly_1 | K1 |  | 99.94% | 99.81% | -22 bp | 20 / 20 | ... |  | 0 |  | 0 |  | 2 | ...
 ```
 
 This is a case where our assembly very closely matches a known k-locus type. There are no characters in the 'K-locus match problems' column, the coverage and identity are both high, the length discrepency is low, and all expected genes were found with high identity. A couple of other low-identity K-locus genes hits were elsewhere in the assembly, but that's not abnormal and no cause for concern.
