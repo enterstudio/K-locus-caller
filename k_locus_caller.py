@@ -350,28 +350,28 @@ def output(table, assembly, k_locus, args):
         print(assembly.name + ': ' + k_locus.name + uncertainty_chars)
     if args.verbose:
         print('Assembly: ' + assembly.name)
-        print('    Best K type match: ' + k_locus.name)
+        print('    Best match locus: ' + k_locus.name)
         print('    Problems: ' + uncertainty_chars)
         print('    Coverage: ' + coverage_str)
         print('    Identity: ' + identity_str)
         print('    Length discrepancy: ' + k_locus.get_length_discrepancy_string())
-        print('    K locus assembly pieces:')
+        print('    Locus assembly pieces:')
         for piece in k_locus.assembly_pieces:
             print('        ' + piece.get_header() + ', ' + piece.get_sequence_short())
-        print('    Expected genes in K locus: ' + expected_genes_str)
+        print('    Expected genes in locus: ' + expected_genes_str)
         for hit in k_locus.expected_hits_inside_locus:
             print('        ' + str(hit))
-        print('    Expected genes missing in K locus: ' + missing_genes_str)
+        print('    Missing expected genes: ' + missing_genes_str)
         for gene in k_locus.missing_expected_genes:
             print('        ' + str(gene))
-        print('    Other genes in K locus: ' + str(len(k_locus.other_hits_inside_locus)))
+        print('    Other genes in locus: ' + str(len(k_locus.other_hits_inside_locus)))
         for hit in k_locus.other_hits_inside_locus:
             print('        ' + str(hit))
-        print('    Expected genes outside K locus: ' + \
+        print('    Expected genes outside locus: ' + \
               str(len(k_locus.expected_hits_outside_locus)))
         for hit in k_locus.expected_hits_outside_locus:
             print('        ' + str(hit))
-        print('    Other genes outside K locus: ' + \
+        print('    Other genes outside locus: ' + \
               str(len(k_locus.other_hits_outside_locus)))
         for hit in k_locus.other_hits_outside_locus:
             print('        ' + str(hit))
