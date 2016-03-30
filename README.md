@@ -14,26 +14,26 @@ In cases where your input assembly closely matches a known K-locus, this tool sh
 
 ## Table of Contents
 
-- [K-locus caller](#)
-	- [Quick version (for the impatient)](#)
-	- [Installation](#)
-	- [Input files](#)
-		- [K-locus sequences](#)
-		- [Gene protein sequences](#)
-		- [K-locus/gene table](#)
-	- [Standard output](#)
-		- [Basic](#)
-		- [Verbose](#)
-	- [Output files](#)
-		- [Summary table](#)
-		- [K-locus matching sequences](#)
-	- [Example results and interpretation](#)
-		- [Very close match](#)
-		- [More distant match](#)
-		- [Broken assembly](#)
-		- [Poor match](#)
-	- [Advanced options](#)
-	- [License](#)
+* [Quick version (for the impatient)](https://github.com/rrwick/K-locus-caller#quick-version-for-the-impatient)
+* [Installation](https://github.com/rrwick/K-locus-caller#installation)
+* [Input files](https://github.com/rrwick/K-locus-caller#input-files)
+  * [K-locus sequences](https://github.com/rrwick/K-locus-caller#k-locus-sequences)
+  * [Gene protein sequences](https://github.com/rrwick/K-locus-caller#gene-protein-sequences)
+  * [K-locus/gene table](https://github.com/rrwick/K-locus-caller#k-locusgene-table)
+* [Standard output](https://github.com/rrwick/K-locus-caller#standard-output)
+  * [Basic](https://github.com/rrwick/K-locus-caller#basic)
+  * [Verbose](https://github.com/rrwick/K-locus-caller#verbose)
+* [Output files](https://github.com/rrwick/K-locus-caller#output-files)
+  * [Summary table](https://github.com/rrwick/K-locus-caller#summary-table)
+  * [K-locus matching sequences](https://github.com/rrwick/K-locus-caller#k-locus-matching-sequences)
+* [Example results and interpretation](https://github.com/rrwick/K-locus-caller#example-results-and-interpretation)
+  * [Very close match](https://github.com/rrwick/K-locus-caller#very-close-match)
+  * [More distant match](https://github.com/rrwick/K-locus-caller#more-distant-match)
+  * [Broken assembly](https://github.com/rrwick/K-locus-caller#broken-assembly)
+  * [Poor match](https://github.com/rrwick/K-locus-caller#poor-match)
+* [Advanced options](https://github.com/rrwick/K-locus-caller#advanced-options)
+* [License](https://github.com/rrwick/K-locus-caller#license)
+
 
 ## Quick version (for the impatient)
 
@@ -62,7 +62,9 @@ Character codes in the output indicate problems with the K-locus match:
 
 ## Installation
 
-No explicit installation is required – simply clone (or download) from GitHub and run the script. It uses BLAST+, so that tool must also be installed (specifically the commands `makeblastdb`, `blastn` and `tblastn`).
+No explicit installation is required – simply clone (or download) from GitHub and run the script.
+
+It uses [BLAST+](http://www.ncbi.nlm.nih.gov/books/NBK279690/), so that tool must also be installed (specifically the commands `makeblastdb`, `blastn` and `tblastn`). BLAST+ can usually be easily installed using a package manager such as [Homebrew](http://brew.sh/) (on Mac) or [apt-get](https://help.ubuntu.com/community/AptGet/Howto) (on Ubuntu and related Linux distributions).
 
 
 ## Input files
@@ -135,7 +137,7 @@ assembly_3: K17?-*
 
 ### Verbose
 
-If run without the `--verbose` option, this tool will give detailed information about each assembly including:
+If run without the `-v` or `--verbose` option, this tool will give detailed information about each assembly including:
 * Which K-locus reference best matched the assembly
 * Information about the nucleotide sequence match between the assembly and the best K-locus reference:
   * % Coverage and % identity
