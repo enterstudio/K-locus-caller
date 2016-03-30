@@ -12,6 +12,29 @@ It carries out the following for each input assembly:
 In cases where your input assembly closely matches a known K-locus, this tool should make that obvious. When your assembly has a novel type, that too should be clear. However, this tool cannot reliably extract or annotate K-locus sequences for totally novel types – if this tool indicates a novel K-locus is present then extracting an annotating the sequence is up to you! Poor assemblies can also confound the results, so be sure to closely examine any case where the K-locus sequence in your assembly is broken into multiple pieces.
 
 
+## Table of Contents
+
+- [K-locus caller](#)
+	- [Quick version (for the impatient)](#)
+	- [Installation](#)
+	- [Input files](#)
+		- [K-locus sequences](#)
+		- [Gene protein sequences](#)
+		- [K-locus/gene table](#)
+	- [Standard output](#)
+		- [Basic](#)
+		- [Verbose](#)
+	- [Output files](#)
+		- [Summary table](#)
+		- [K-locus matching sequences](#)
+	- [Example results and interpretation](#)
+		- [Very close match](#)
+		- [More distant match](#)
+		- [Broken assembly](#)
+		- [Poor match](#)
+	- [Advanced options](#)
+	- [License](#)
+
 ## Quick version (for the impatient)
 
 This tool needs the following input files to run (included in this repository):
