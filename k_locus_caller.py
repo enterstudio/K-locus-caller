@@ -256,8 +256,8 @@ def find_assembly_pieces(assembly, k_locus, args):
         end = latest.latest_hit_coordinate()
         if good_start_and_end(start, end, k_locus.get_length(), args.start_end_margin) and \
         same_contig_and_strand:
-            gap_filling_piece = AssemblyPiece(assembly, earliest.contig_name, start, end,
-                                              earliest.strand)
+            gap_filling_piece = AssemblyPiece(assembly, earliest.contig_name, earliest.start,
+                                              latest.end, earliest.strand)
             k_locus.assembly_pieces = merge_assembly_pieces(k_locus.assembly_pieces + \
                                                             [gap_filling_piece])
     k_locus.identity = get_mean_identity(k_locus.assembly_pieces)
@@ -351,7 +351,7 @@ def output(table, assembly, k_locus, args):
     if args.verbose:
         print('Assembly: ' + assembly.name)
         print('    Best K type match: ' + k_locus.name)
-        print('    Uncertainties: ' + uncertainty_chars)
+        print('    Problems: ' + uncertainty_chars)
         print('    Coverage: ' + coverage_str)
         print('    Identity: ' + identity_str)
         print('    Length discrepancy: ' + k_locus.get_length_discrepancy_string())
