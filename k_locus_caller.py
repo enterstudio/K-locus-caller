@@ -49,19 +49,17 @@ def main():
     args = get_arguments()
     check_for_blast()
     check_files_exist(args.assembly + [args.k_ref_seqs] + [args.k_ref_genes] + [args.gene_seqs])
-    make_paths_absolute(args)
-    if not os.path.exists(args.outdir):
-        os.makedirs(args.outdir)
+    fix_paths(args)
     check_inputs(args)
     k_refs = load_k_locus_references(args.k_ref_seqs, args.k_ref_genes) # type: dict[str, KLocus]
-    table_file = create_table_file(args.outdir)
+    table_file = create_table_file(args.out)
     for fasta_file in args.assembly:
         assembly = Assembly(fasta_file)
         best_k = get_best_k_type_match(assembly, args.k_ref_seqs, k_refs)
         find_assembly_pieces(assembly, best_k, args)
         protein_blast(assembly, best_k, args)
         output(table_file, assembly, best_k, args)
-        save_assembly_pieces_to_file(best_k, assembly, args.outdir)
+        save_assembly_pieces_to_file(best_k, assembly, args.out)
     sys.exit(0)
 
 
@@ -80,8 +78,8 @@ def get_arguments():
                         help='Table file specifying which genes occur in which K locus')
     parser.add_argument('-s', '--gene_seqs', type=str, required=True,
                         help='Fasta file with protein sequences for each gene')
-    parser.add_argument('-o', '--outdir', type=str, required=True,
-                        help='Output directory')
+    parser.add_argument('-o', '--out', type=str, required=False, default='./k_locus_results',
+                        help='Output directory/prefix')
     parser.add_argument('--start_end_margin', type=int, required=False, default=10,
                         help='Missing bases at the ends of K locus allowed in a perfect match.')
     parser.add_argument('--min_gene_cov', type=float, required=False, default=90.0,
@@ -120,15 +118,21 @@ def find_program(name): # type: (str) -> bool
     out, err = process.communicate()
     return bool(out) and not bool(err)
 
-def make_paths_absolute(args):
+def fix_paths(args):
     '''
     Changes the paths given by the user to absolute paths, which are easier to work with later.
+    Also creates the output directory, if necessary.
     '''
     args.assembly = [os.path.abspath(x) for x in args.assembly]
     args.k_ref_seqs = os.path.abspath(args.k_ref_seqs)
     args.k_ref_genes = os.path.abspath(args.k_ref_genes)
     args.gene_seqs = os.path.abspath(args.gene_seqs)
-    args.outdir = os.path.abspath(args.outdir)
+    if args.out[-1] == '/':
+        args.out += 'k_locus_results' 
+    args.out = os.path.abspath(args.out)
+    out_dir = os.path.dirname(args.out)
+    if not os.path.exists(out_dir):
+        os.makedirs(out_dir)
 
 def check_files_exist(filenames): # type: (list[str]) -> bool
     '''
@@ -285,11 +289,11 @@ def protein_blast(assembly, k_locus, args):
     k_locus.other_hits_inside_locus = [x for x in other_hits if x.in_assembly_pieces(k_locus.assembly_pieces)]
     k_locus.other_hits_outside_locus = [x for x in other_hits if not x.in_assembly_pieces(k_locus.assembly_pieces)]
 
-def create_table_file(outdir):
+def create_table_file(output_prefix):
     '''
     Creates the table file and writes a header line.
     '''
-    table_path = os.path.join(outdir, 'k-locus_results.txt')
+    table_path = output_prefix + '_table.txt'
     table = open(table_path, 'w')
     headers = []
     headers.append('Assembly')
@@ -520,20 +524,17 @@ def complement_base(base):
     reverse = 'TACGtacgYRSWMKyrswmkVHDBvhdbNn.-?N'
     return reverse[forward.find(base)]
 
-def save_assembly_pieces_to_file(k_locus, assembly, outdir):
+def save_assembly_pieces_to_file(k_locus, assembly, output_prefix):
     '''
     Creates a single FASTA file for all of the assembly pieces.
     Assumes all assembly pieces are from the same assembly.
     '''
     if not k_locus.assembly_pieces:
         return
-    assembly_and_locus = assembly.name + '_' + k_locus.name
-    fasta_file_name = os.path.join(outdir, assembly_and_locus + '.fasta')
+    fasta_file_name = output_prefix + '_' + assembly.name + '.fasta'
     fasta_file = open(fasta_file_name, 'w')
-    uncertainties = k_locus.get_match_uncertainty_words()
     for piece in k_locus.assembly_pieces:
-        fasta_file.write('>' + assembly_and_locus + '_' + piece.get_header() + ' ' + \
-                         uncertainties + '\n')
+        fasta_file.write('>' + assembly.name + '_' + piece.get_header() + '\n')
         fasta_file.write(add_line_breaks_to_sequence(piece.get_sequence(), 60))
 
 def add_line_breaks_to_sequence(sequence, length):
@@ -829,22 +830,6 @@ class KLocus(object):
         if not all([x.over_identity_threshold for x in self.expected_hits_inside_locus]):
             uncertainty_chars += '*'
         return uncertainty_chars
-
-    def get_match_uncertainty_words(self):
-        '''
-        Returns a string with similar info as get_match_uncertainty_chars, but uses words instead
-        of single characters.
-        '''
-        uncertainty_words = []
-        if len(self.assembly_pieces) > 1:
-            uncertainty_words.append('broken')
-        if self.missing_expected_genes:
-            uncertainty_words.append('incomplete')
-        if self.other_hits_inside_locus:
-            uncertainty_words.append('extra_genes')
-        if not all([x.over_identity_threshold for x in self.expected_hits_inside_locus]):
-            uncertainty_words.append('low_gene_identity')
-        return ' '.join(uncertainty_words)
 
     def get_length_discrepancy(self):
         '''
