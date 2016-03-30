@@ -1,5 +1,4 @@
 # K-locus caller
-------------------
 
 This is a tool which reports information about the K-locus for Klebsiella genome assemblies. It will help a user to decide whether their Klebsiella sample has a known or novel K-locus.
 
@@ -69,7 +68,7 @@ It uses [BLAST+](http://www.ncbi.nlm.nih.gov/books/NBK279690/), so that tool mus
 
 ## Input files
 
-### K-locus sequences
+#### K-locus sequences
 
 This is a FASTA file containing the nucleotide sequences of each known K-locus. The header for each sequence is simply the K-locus name, e.g. K1, K2, etc.
 
@@ -86,7 +85,7 @@ CCGGCCACAAAAGCAATTCCAAAGGAGATGCTGCCGATCGTTGATAAGCCAATGATTCAG
 ...
 ```
 
-### Gene protein sequences
+#### Gene protein sequences
 
 This is a FASTA file containing the protein sequences for each protein in all known K-loci. The headers must be in an [SRST2](https://github.com/katholt/srst2)-style format, which assigns each sequence to a cluster. The header contains four parts separated by double underscores. The important parts for this program are the first (cluster ID number) and the third (allele name).
 
@@ -103,7 +102,7 @@ GLGIRELDYTGFSGHSALSAAFWPIFLWLLSARFSAGLQKAAVATGYILAAVVGYSRLVI
 ...
 ```
 
-### K-locus/gene table
+#### K-locus/gene table
 
 This is a tab-delimited table specifying which alleles are in which known K-locus types. It has no header line and only two columns: the K-locus name (which matches the headers in the K-loci FASTA input) and the full allele name (which matches the headers in the gene FASTA input).
 
@@ -121,7 +120,7 @@ K2	43__K2__K2-CDS2-__00004
 
 ## Standard output
 
-### Basic
+#### Basic
 
 This tool will write a simple line to stdout for each assembly:
 * the assembly name
@@ -135,7 +134,7 @@ assembly_2: K4
 assembly_3: K17?-*
 ```
 
-### Verbose
+#### Verbose
 
 If run without the `-v` or `--verbose` option, this tool will give detailed information about each assembly including:
 * Which K-locus reference best matched the assembly
@@ -152,7 +151,7 @@ If run without the `-v` or `--verbose` option, this tool will give detailed info
 
 ## Output files
 
-### Summary table
+#### Summary table
 
 This tool produces a single tab-delimited table summarising the results of all input assemblies. It has the following columns:
 * **Assembly**: the name of the input assembly, taken from the assembly filename.
@@ -175,7 +174,7 @@ This tool produces a single tab-delimited table summarising the results of all i
 * **Other genes found outside K-locus**: the number of unexpected genes (genes from K-loci other than the best match) which were found outside the K-locus part of the assembly.
 * **Other genes found outside K-locus, details**: gene names and percent identity (from the BLAST hits) for the other genes found outside the K-locus part of the assembly.
 
-### K-locus matching sequences
+#### K-locus matching sequences
 
 For each input assembly, this tool produces a FASTA file of the region(s) of the assembly which correspond to the best K-locus match. This may be a single piece (in cases of a good assembly and a strong match) or it may be in multiple pieces (in cases of poor assembly and/or a novel K-locus). The file is named using the assembly name and then the best matching K-locus name.
 
@@ -184,7 +183,7 @@ For each input assembly, this tool produces a FASTA file of the region(s) of the
 
 These examples show what the tool's results might look like in the output table. The gene details columns of the table have been excluded for brevity, as they can be quite long.
 
-### Very close match
+#### Very close match
 
 Assembly | Best matching K-locus | K-locus match problems | K-locus match coverage | K-locus match identity | K-locus match length discrepancy | Expected genes found in K-locus | Expected genes found in K-locus, details | Expected genes not found in K-locus | Other genes found in K-locus | Other genes found in K-locus, details | Expected genes found outside K-locus | Expected genes found outside K-locus, details | Other genes found outside K-locus | Other genes found outside K-locus, details
 --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | ---
@@ -194,7 +193,7 @@ This is a case where our assembly very closely matches a known k-locus type. The
 
 Overall, this is a nice, solid match for K1.
 
-### More distant match
+#### More distant match
 
 Assembly | Best matching K-locus | K-locus match problems | K-locus match coverage | K-locus match identity | K-locus match length discrepancy | Expected genes found in K-locus | Expected genes found in K-locus, details | Expected genes not found in K-locus | Other genes found in K-locus | Other genes found in K-locus, details | Expected genes found outside K-locus | Expected genes found outside K-locus, details | Other genes found outside K-locus | Other genes found outside K-locus, details
 --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | ---
@@ -204,7 +203,7 @@ This case shows an assembly that also matches the K1 locus sequence, but not as 
 
 Our sample still almost certainly has a K-type of K1, but it has diverged a bit more from our K1 reference, possibly due to mutation and/or recombination.
 
-### Broken assembly
+#### Broken assembly
 
 Assembly | Best matching K-locus | K-locus match problems | K-locus match coverage | K-locus match identity | K-locus match length discrepancy | Expected genes found in K-locus | Expected genes found in K-locus, details | Expected genes not found in K-locus | Other genes found in K-locus | Other genes found in K-locus, details | Expected genes found outside K-locus | Expected genes found outside K-locus, details | Other genes found outside K-locus | Other genes found outside K-locus, details
 --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | ---
@@ -214,7 +213,7 @@ Here is a case where our assembly matched a known K-locus type well (high covera
 
 In cases like this, it is worth examining the case in more detail outside of this tool. For this example, such an examination revealed that the assembly was poor (broken into many small pieces) and the manB gene happened to be split between two contigs. So the manB gene isn't really missing, it's just broken in two. Our sample most likely is a very good match for K2, but the poor assembly quality made it difficult for this tool to determine that automatically.
 
-### Poor match
+#### Poor match
 
 Assembly | Best matching K-locus | K-locus match problems | K-locus match coverage | K-locus match identity | K-locus match length discrepancy | Expected genes found in K-locus | Expected genes found in K-locus, details | Expected genes not found in K-locus | Other genes found in K-locus | Other genes found in K-locus, details | Expected genes found outside K-locus | Expected genes found outside K-locus, details | Other genes found outside K-locus | Other genes found outside K-locus, details
 --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | ---
