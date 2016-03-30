@@ -1,12 +1,15 @@
 # K-locus caller
+------------------
 
-This is a tool which reports information about the K-locus for Klebsiella genome assemblies. It will help a user to decide whether their Klebsiella sample has a known or novel K-locus, and if novel, how similar it is to a known type.
+This is a tool which reports information about the K-locus for Klebsiella genome assemblies. It will help a user to decide whether their Klebsiella sample has a known or novel K-locus.
 
 It carries out the following for each input assembly:
 * BLAST for all known K-locus nucleotide sequences (using `blastn`) to identify the best match ('best' defined as having the highest coverage).
 * Extract the region(s) of the assembly which correspond to the BLAST hits (i.e. the K-locus sequence in the assembly) and save it to a FASTA file.
 * BLAST for all known K-locus genes (using `tblastn`) to identify which expected genes (genes in the best matching K-locus) are present/missing and whether any unexpected genes (genes from other K-loci) are present.
 * Output a summary to a table file.
+
+In cases where your input assembly closely matches a known K-locus, this tool should make that obvious. When your assembly has a novel type, that too should be clear. However, this tool cannot reliably extract or annotate K-locus sequences for totally novel types – if this tool indicates a novel K-locus is present then extracting an annotating the sequence is up to you! Poor assemblies can also confound the results, so be sure to closely examine any case where the K-locus sequence in your assembly is broken into multiple pieces.
 
 
 ## Quick version (for the impatient)
@@ -27,7 +30,7 @@ It generates the following output files:
 * A FASTA file for each input assembly with the nucleotide sequences matching the closest K-locus
 * A table summarising the results for all input assemblies
 
-Character codes indicate problems with the K-locus match:
+Character codes in the output indicate problems with the K-locus match:
 * `?` = the match was not in a single piece, possible due to a poor match or discontiguous assembly.
 * `-` = genes expected in the K-locus were not found.
 * `+` = extra genes were found in the K-locus.
@@ -154,6 +157,8 @@ For each input assembly, this tool produces a FASTA file of the region(s) of the
 
 ## Example results and interpretation
 
+These examples show what the tool's results might look like in the output table. The gene details columns of the table have been excluded for brevity, as they can be quite long.
+
 ### Very close match
 
 Assembly | Best matching K-locus | K-locus match problems | K-locus match coverage | K-locus match identity | K-locus match length discrepancy | Expected genes found in K-locus | Expected genes found in K-locus, details | Expected genes not found in K-locus | Other genes found in K-locus | Other genes found in K-locus, details | Expected genes found outside K-locus | Expected genes found outside K-locus, details | Other genes found outside K-locus | Other genes found outside K-locus, details
@@ -165,6 +170,36 @@ This is a case where our assembly very closely matches a known k-locus type. The
 
 Overall, this is a nice, solid match for K1.
 
+### More distant match
+
+Assembly | Best matching K-locus | K-locus match problems | K-locus match coverage | K-locus match identity | K-locus match length discrepancy | Expected genes found in K-locus | Expected genes found in K-locus, details | Expected genes not found in K-locus | Other genes found in K-locus | Other genes found in K-locus, details | Expected genes found outside K-locus | Expected genes found outside K-locus, details | Other genes found outside K-locus | Other genes found outside K-locus, details
+--- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | ---
+assembly_2 | K1 | * | 99.84% | 95.32% | +97 bp | 20 / 20 | ... |  | 0 |  | 0 |  | 2 | ...
+
+This case shows an assembly that also matches the K1 locus sequence, but not as closely as our previous case. The `*` character indicates that one or more of the expected genes falls below the identity threshold (default 95%). The 'Expected genes found in K-locus, details' columns, excluded here for brevity, would show the identity for each gene.
+
+Our sample still almost certainly has a K-type of K1, but it has diverged a bit more from our K1 reference, possibly due to mutation and/or recombination.
+
+### Broken assembly
+
+Assembly | Best matching K-locus | K-locus match problems | K-locus match coverage | K-locus match identity | K-locus match length discrepancy | Expected genes found in K-locus | Expected genes found in K-locus, details | Expected genes not found in K-locus | Other genes found in K-locus | Other genes found in K-locus, details | Expected genes found outside K-locus | Expected genes found outside K-locus, details | Other genes found outside K-locus | Other genes found outside K-locus, details
+--- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | ---
+assembly_3 | K2 | ?- | 99.95% | 98.38% | n/a | 17 / 18 | ... | K2-CDS17-manB | 0 |  | 0 |  | 1 | ...
+
+Here is a case where our assembly matched a known K-locus type well (high coverage and identity) but with a couple of problems. First, the `?` character indicates that the K-locus sequence was not found in one piece in the assembly. Second, one of the expected genes (K2-CDS17-manB) was not found in the gene BLAST search.
+
+In cases like this, it is worth examining the case in more detail outside of this tool. For this example, such an examination revealed that the assembly was poor (broken into many small pieces) and the manB gene happened to be split between two contigs. So the manB gene isn't really missing, it's just broken in two. Our sample most likely is a very good match for K2, but the poor assembly quality made it difficult for this tool to determine that automatically.
+
+### Poor match
+
+Assembly | Best matching K-locus | K-locus match problems | K-locus match coverage | K-locus match identity | K-locus match length discrepancy | Expected genes found in K-locus | Expected genes found in K-locus, details | Expected genes not found in K-locus | Other genes found in K-locus | Other genes found in K-locus, details | Expected genes found outside K-locus | Expected genes found outside K-locus, details | Other genes found outside K-locus | Other genes found outside K-locus, details
+--- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | ---
+assembly_4 | K3 | ?-* | 77.94% | 83.60% | n/a | 15 / 20 | ... | ... | 0 |  | 0 |  | 5 | ...
+
+In this case, the tool did not find a close match to any known K-locus sequence. The best match was to K3, but BLAST only found alignments for 78% of the K3 sequence, and only at 84% nucleotide identity. Five of the twenty K3 genes were not found, and the 15 which were found had low identity. The assembly sequences matching K3 did not come in one piece (indicated by `?`), possibly due to assembly problems, but more likely due to the fact that our sample is not in fact K3 but rather has some novel K-locus that was not in our reference inputs.
+
+A case such as this demands a closer examination outside of this tool. It is likely a novel K-locus type, and you may wish to extract and annotate the K-locus sequence from the assembly.
+
 
 ## Advanced options
 
@@ -173,7 +208,7 @@ Each of these options has a default and is not required on the command line, but
 * `--start_end_margin`: this tool tries to identify whether the start and end of a K-locus are present in an assembly and in the same contig. This option allows for a bit of wiggle room in this determination. For example, if this value is 10 (the default), a K-locus match that is missing the first 8 base pairs will still count as capturing the start of the locus. If set to zero, then the BLAST hit(s) must extend to the very start and end of the K-locus for this tool to consider the match complete.
 * `--min_gene_cov`: the minimum required percent coverage for the gene BLAST search. For example if this value is 90 (the default), then a gene BLAST hit which only covers 85% of the gene will be ignored. Using a lower value will allow smaller pieces of genes to be included in the results.
 * `--min_gene_id`: the mimimum required percent identity for the gene BLAST search. For example if this value is 70 (the default), then a gene BLAST hit which has only 65% amino acid identity will be ignored. A lower value will allow for more distant gene hits to be included in the results (possibly resulting in more genes in the 'Other genes found outside K-locus' category). A higher value will make the tool only accept very close gene hits (possibly resulting in low-identity K-locus genes not being found and included in 'expected genes not found in K-locus').
-* `--low_gene_id`: the threshold for what counts as a low identity match in the gene BLAST search. This only affects whether or not the `*` character is included in the 'K-locus match problems'.
+* `--low_gene_id`: the percent identity threshold for what counts as a low identity match in the gene BLAST search. This only affects whether or not the `*` character is included in the 'K-locus match problems'. Default is 95.
 * `--min_assembly_piece`: the smallest piece of the assembly (measured in bases) that will be included in the output FASTA files. For example, if this value is 100 (the default), then a 50 bp match between the assembly and the best matching K-locus reference will be ignored.
 * `--gap_fill_size`: the size of assembly gaps to be filled in when producing the output FASTA files. For example, if this value is 100 (the default) and an assembly has two separate K-locus BLAST hits which are only 50 bp apart in a contig, they will be merged together into one sequence for the output FASTA. But if the two BLAST hits were 150 bp apart, they will be included in the output FASTA as two separate sequences. A lower value will possibly result in more fragmented output FASTA sequences. A higher value will possibly result in more sequences being included in the K-locus output.
 
