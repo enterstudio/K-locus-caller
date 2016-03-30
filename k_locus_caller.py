@@ -52,13 +52,13 @@ def main():
     fix_paths(args)
     check_inputs(args)
     k_refs = load_k_locus_references(args.k_ref_seqs, args.k_ref_genes) # type: dict[str, KLocus]
-    table_file = create_table_file(args.out)
+    create_table_file(args.out)
     for fasta_file in args.assembly:
         assembly = Assembly(fasta_file)
         best_k = get_best_k_type_match(assembly, args.k_ref_seqs, k_refs)
         find_assembly_pieces(assembly, best_k, args)
         protein_blast(assembly, best_k, args)
-        output(table_file, assembly, best_k, args)
+        output(args.out, assembly, best_k, args)
         save_assembly_pieces_to_file(best_k, assembly, args.out)
     sys.exit(0)
 
@@ -158,10 +158,9 @@ def quit_with_error(message): # type: (str) -> None
 def check_inputs(args):
     '''
     Makes sure that:
-      1) the gene names are in the correct format
-      2) the gene names in the table are present in the FASTA file
-      3) each K locus sequence has at least one gene in the table
-      4) the K loci in the table are present in the FASTA file
+      1) the gene names in the table are present in the FASTA file
+      2) each K locus sequence has at least one gene in the table
+      3) the K loci in the table are present in the FASTA file
     If any of these are not true, it quits with an error message.
     '''
     k_names_from_fasta = set([x[0] for x in load_fasta(args.k_ref_seqs)])
@@ -194,16 +193,6 @@ def check_inputs(args):
     if missing_k_loci:
         quit_with_error('These K loci are present in the FASTA file but not in the '
                         'table: ' + ', '.join(list(missing_k_loci)))
-    for gene_name in gene_names_from_table:
-        gene_name_parts = gene_name.split('__')
-        if len(gene_name_parts) < 3:
-            quit_with_error('This gene name is not in the correct format: ' + gene_name)
-        try:
-            int(gene_name_parts[0])
-        except ValueError:
-            quit_with_error('This gene\'s cluster number is not a number: ' + gene_name)
-        if not gene_name_parts[2]:
-            quit_with_error('This gene is missing an allele name: ' + gene_name)
 
 def get_best_k_type_match(assembly, k_refs_fasta, k_refs):
     # type: (Assembly, str, dict[str, KLocus]) -> KLocus
@@ -291,9 +280,26 @@ def protein_blast(assembly, k_locus, args):
 
 def create_table_file(output_prefix):
     '''
-    Creates the table file and writes a header line.
+    Creates the table file and writes a header line if necessary.
+    If the file already exists and the header line is correct, then it does nothing (to allow
+    multiple independent processes to append to the file).
     '''
     table_path = output_prefix + '_table.txt'
+    if os.path.isfile(table_path):
+        with open(table_path, 'r') as existing_table:
+            first_line = existing_table.readline().strip()
+            if first_line == ('Assembly\tBest match locus\tProblems\tCoverage\tIdentity\t'
+                              'Length discrepancy\tExpected genes in locus\t'
+                              'Expected genes in locus, details\tMissing expected genes\t'
+                              'Other genes in locus\tOther genes in locus, details\t'
+                              'Expected genes outside locus\t'
+                              'Expected genes outside locus, details\tOther genes outside locus\t'
+                              'Other genes outside locus, details'):
+                return
+
+
+
+
     table = open(table_path, 'w')
     headers = []
     headers.append('Assembly')
@@ -313,10 +319,9 @@ def create_table_file(output_prefix):
     headers.append('Other genes outside locus, details')
     table.write('\t'.join(headers))
     table.write('\n')
-    table.flush()
-    return table
+    table.close()
 
-def output(table, assembly, k_locus, args):
+def output(output_prefix, assembly, k_locus, args):
     '''
     Writes a line to the output table describing all that we've learned about the given K locus and
     writes to stdout as well.
@@ -346,9 +351,11 @@ def output(table, assembly, k_locus, args):
     line.append(str(len(k_locus.other_hits_outside_locus)))
     line.append(get_gene_info_string(k_locus.other_hits_outside_locus))
 
+    table_path = output_prefix + '_table.txt'
+    table = open(table_path, 'a')
     table.write('\t'.join(line))
     table.write('\n')
-    table.flush()
+    table.close()
 
     if not args.verbose:
         print(assembly.name + ': ' + k_locus.name + uncertainty_chars)
@@ -415,10 +422,7 @@ def get_best_hit_for_query(blast_hits, query_name):
 def cull_conflicting_hits(hit_to_keep, blast_hits):
     '''
     This function returns a (potentially) reduced set of BLAST hits which excludes BLAST hits that
-    overlap with the hit to keep (same part of assembly) and are in the same cluster as the hit to
-    keep.
-    If any of the other blast hits have the exact same target range as the hit to keep, they'll be
-    culled, regardless of their cluster.
+    overlap too much (same part of assembly) with the hit to keep.
     '''
     return [x for x in blast_hits if not x.conflicts(hit_to_keep)]
 
@@ -428,7 +432,7 @@ def cull_all_conflicting_hits(blast_hits):
     This function returns a (potentially) reduced set of BLAST hits where none of the remaining
     hits conflict.
     '''
-    blast_hits.sort(key=lambda x: x.pident, reverse=True)
+    blast_hits.sort(key=lambda x: x.bitscore, reverse=True)
     kept_hits = []
     while blast_hits:
         kept_hits.append(blast_hits.pop(0))
@@ -607,7 +611,7 @@ def get_gene_info_string(gene_hit_list):
     '''
     Returns a single comma-delimited string summarising the gene hits in the given list.
     '''
-    return ';'.join([x.allele_name + ',' + str(x.pident) + '%' for x in gene_hit_list])
+    return ';'.join([x.qseqid + ',' + str(x.pident) + '%' for x in gene_hit_list])
 
 
 def is_contig_name_spades_format(contig_name):
@@ -693,16 +697,12 @@ class GeneBlastHit(BlastHit):
     '''
     def __init__(self, hit_string):
         BlastHit.__init__(self, hit_string)
-        gene_name_parts = self.qseqid.split('__')
-        self.cluster = int(gene_name_parts[0])
-        self.allele_name = gene_name_parts[2]
         self.over_identity_threshold = False
 
     def conflicts(self, other):
         '''
         Returns whether or not this hit conflicts with the other hit.
-        If the hits are in the same cluster, then any overlap between them counts as a conflict.
-        If the hits are in different clusters, then it takes 90% overlap to conflict.
+        A conflict is defined as the hits overlapping by 50% or more of the shortest hit's length.
         A hit is not considered to conflict with itself.
         '''
         if self is other:
@@ -715,13 +715,9 @@ class GeneBlastHit(BlastHit):
             overlap = min_end - max_start
         else:
             overlap = 0
-        if self.cluster != other.cluster:
-            min_length = min(self.send - self.sstart, other.send - other.sstart)
-            frac_overlap = overlap / min_length
-            return frac_overlap > 0.9
-        else:
-            return overlap > 0
-
+        min_length = min(self.send - self.sstart, other.send - other.sstart)
+        frac_overlap = overlap / min_length
+        return frac_overlap > 0.5
 
 
 

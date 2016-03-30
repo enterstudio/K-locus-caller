@@ -87,16 +87,16 @@ CCGGCCACAAAAGCAATTCCAAAGGAGATGCTGCCGATCGTTGATAAGCCAATGATTCAG
 
 #### Gene protein sequences
 
-This is a FASTA file containing the protein sequences for each protein in all known K loci. The headers must be in an [SRST2](https://github.com/katholt/srst2)-style format, which assigns each sequence to a cluster. The header contains four parts separated by double underscores. The important parts for this program are the first (cluster ID number) and the third (allele name).
+This is a FASTA file containing the protein sequences for each protein in all known K loci.
 
 Example:
 ```
->36__K1__K1-CDS1-galF__00064
+>K1-CDS1-galF
 MANLKAVIPVAGLGMHMLPATKAIPKEMLPIVDKPMIQYIVDEIVAAGIKEIVLVTHSSK
 NAVENHFDTSYELEALLEQRVKRQLLAEVQAICPPGVTIMNVRQAQPLGLGHSILCARPV
 ...
 AIAELAKKQSVDAMLMTGESYDCGKKMGYMQAFVTYGMRNLKEGAKFRESIKKLLA*
->43__K1__K1-CDS2-cpsACP__00003
+>K1-CDS2-cpsACP
 MNWQLISFFGDSTVLLPSAAALFIVLMLRKTSRLLAWQWSLLFGITGAIVCASKLAFMGW
 GLGIRELDYTGFSGHSALSAAFWPIFLWLLSARFSAGLQKAAVATGYILAAVVGYSRLVI
 ...
