@@ -16,9 +16,6 @@ In cases where your input assembly closely matches a known K locus, this tool sh
 * [Quick version (for the impatient)](https://github.com/rrwick/K locus-caller#quick-version-for-the-impatient)
 * [Installation](https://github.com/rrwick/K locus-caller#installation)
 * [Input files](https://github.com/rrwick/K locus-caller#input-files)
-  * [K locus sequences](https://github.com/rrwick/K locus-caller#K locus-sequences)
-  * [Gene protein sequences](https://github.com/rrwick/K locus-caller#gene-protein-sequences)
-  * [K locus/gene table](https://github.com/rrwick/K locus-caller#K locusgene-table)
 * [Standard output](https://github.com/rrwick/K locus-caller#standard-output)
   * [Basic](https://github.com/rrwick/K locus-caller#basic)
   * [Verbose](https://github.com/rrwick/K locus-caller#verbose)
@@ -63,57 +60,35 @@ Character codes in the output indicate problems with the K locus match:
 
 No explicit installation is required – simply clone (or download) from GitHub and run the script.
 
-It uses [BLAST+](http://www.ncbi.nlm.nih.gov/books/NBK279690/), so that tool must also be installed (specifically the commands `makeblastdb`, `blastn` and `tblastn`). BLAST+ can usually be easily installed using a package manager such as [Homebrew](http://brew.sh/) (on Mac) or [apt-get](https://help.ubuntu.com/community/AptGet/Howto) (on Ubuntu and related Linux distributions).
+This tool has two dependencies:
+* [Biopython](http://biopython.org/wiki/Main_Page) must be available to Python. Installation instructions are [here](http://biopython.org/DIST/docs/install/Installation.html).
+* [BLAST+](http://www.ncbi.nlm.nih.gov/books/NBK279690/) commands must be available on the command line (specifically the commands `makeblastdb`, `blastn` and `tblastn`). BLAST+ can usually be easily installed using a package manager such as [Homebrew](http://brew.sh/) (on Mac) or [apt-get](https://help.ubuntu.com/community/AptGet/Howto) (on Ubuntu and related Linux distributions).
 
 
 ## Input files
 
-#### K locus sequences
+#### Assemblies
 
-This is a FASTA file containing the nucleotide sequences of each known K locus. The header for each sequence is simply the K locus name, e.g. K1, K2, etc.
+Using the `-a` (or `--assembly`) argument, you must provide one or more FASTA files to analyse. There are no particular requirements about the header formats in these inputs.
 
-Example:
+#### K locus references
+
+Using the `-k` (or `--k_refs`) argument, you must provide a Genbank file containing the known K loci.
+
+This input Genbank has the following requirements:
+* The `source` feature must contain a `note` qualifier which begins with 'K locus:'. Whatever follows is used as the K locus name.
+* Any K locus gene should be annotated as `CDS` features. All `CDS` features will be used and any other type of feature will be ignored.
+* If the gene has a name, it should be specified in a `gene` qualifier. This is not required, but if absent the gene will only be named using its numbered position in the K locus.
+
+Example piece of input Genbank file:
 ```
->K1
-ATGAATATGGCGAATTTGAAAGCGGTTATTCCGGTCGCAGGACTAGGCATGCATATGCTG
-CCGGCCACAAAGGCAATTCCAAAGGAGATGCTGCCGATCGTTGATAAGCCAATGATTCAG
 ...
-CCGCGATCTGTTTGGTAACGATTAA
->K2
-ATGAATATGGCGAATTTGAAAGCGGTTATTCCGGTCGCAGGACTAGGCATGCATATGCTG
-CCGGCCACAAAAGCAATTCCAAAGGAGATGCTGCCGATCGTTGATAAGCCAATGATTCAG
-...
-```
-
-#### Gene protein sequences
-
-This is a FASTA file containing the protein sequences for each protein in all known K loci.
-
-Example:
-```
->K1-CDS1-galF
-MANLKAVIPVAGLGMHMLPATKAIPKEMLPIVDKPMIQYIVDEIVAAGIKEIVLVTHSSK
-NAVENHFDTSYELEALLEQRVKRQLLAEVQAICPPGVTIMNVRQAQPLGLGHSILCARPV
-...
-AIAELAKKQSVDAMLMTGESYDCGKKMGYMQAFVTYGMRNLKEGAKFRESIKKLLA*
->K1-CDS2-cpsACP
-MNWQLISFFGDSTVLLPSAAALFIVLMLRKTSRLLAWQWSLLFGITGAIVCASKLAFMGW
-GLGIRELDYTGFSGHSALSAAFWPIFLWLLSARFSAGLQKAAVATGYILAAVVGYSRLVI
-...
-```
-
-#### K locus/gene table
-
-This is a tab-delimited table specifying which alleles are in which known K locus types. It has no header line and only two columns: the K locus name (which matches the headers in the K loci FASTA input) and the full allele name (which matches the headers in the gene FASTA input).
-
-Example:
-```
-K1	36__K1__K1-CDS1-galF__00064
-K1	43__K1__K1-CDS2-cpsACP__00003
-...
-K1	21__K1__K1-CDS20-ugd__00015
-K2	36__K2__K2-CDS1-galF__00065
-K2	43__K2__K2-CDS2-__00004
+source          1..23877
+                /organism="Klebsiella pneumoniae"
+                /mol_type="genomic DNA"
+                /note="K locus: K1"
+CDS             1..897
+                /gene="galF"
 ...
 ```
 
