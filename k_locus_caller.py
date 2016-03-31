@@ -85,6 +85,8 @@ def get_arguments():
                         help='Genbank file with reference K loci')
     parser.add_argument('-o', '--out', type=str, required=False, default='./k_locus_results',
                         help='Output directory/prefix')
+    parser.add_argument('-v', '--verbose', action='store_true',
+                        help='Display detailed information about each assembly in stdout')
     parser.add_argument('--start_end_margin', type=int, required=False, default=10,
                         help='Missing bases at the ends of K locus allowed in a perfect match.')
     parser.add_argument('--min_gene_cov', type=float, required=False, default=90.0,
@@ -99,8 +101,6 @@ def get_arguments():
     parser.add_argument('--gap_fill_size', type=int, required=False, default=100,
                         help='when separate parts of the assembly are found within this distance, '
                              'they will be merged')
-    parser.add_argument('-v', '--verbose', action='store_true',
-                        help='Display detailed information about each assembly in stdout')
 
     return parser.parse_args()
 
