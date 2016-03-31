@@ -2,7 +2,7 @@
 '''
 K locus caller
 
-This is a tool which reports information about the K type for Klebsiella genome assemblies.  It
+This is a tool which reports information about the K type for Klebsiella genome assemblies. It
 will help a user to decide whether their Klebsiella sample has a known or novel K type, and if
 novel, how similar it is to a known type.
 
@@ -51,17 +51,18 @@ def main():
     check_for_blast()
     check_files_exist(args.assembly + [args.k_refs])
     fix_paths(args)
-    # check_inputs(args)
-    k_ref_seqs, gene_seqs, k_ref_genes = parse_genbank(args.k_refs)
-    k_refs = load_k_locus_references(args.k_ref_seqs, args.k_ref_genes) # type: dict[str, KLocus]
+    temp_dir = make_temp_dir(args)
+    k_ref_seqs, gene_seqs, k_ref_genes = parse_genbank(args.k_refs, temp_dir)
+    k_refs = load_k_locus_references(k_ref_seqs, k_ref_genes) # type: dict[str, KLocus]
     create_table_file(args.out)
     for fasta_file in args.assembly:
         assembly = Assembly(fasta_file)
-        best_k = get_best_k_type_match(assembly, args.k_ref_seqs, k_refs)
+        best_k = get_best_k_type_match(assembly, k_ref_seqs, k_refs)
         find_assembly_pieces(assembly, best_k, args)
-        protein_blast(assembly, best_k, args)
+        protein_blast(assembly, best_k, gene_seqs, args)
         output(args.out, assembly, best_k, args)
         save_assembly_pieces_to_file(best_k, assembly, args.out)
+    clean_up(k_ref_seqs, gene_seqs, temp_dir)
     sys.exit(0)
 
 
@@ -139,18 +140,37 @@ def fix_paths(args):
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
 
-def parse_genbank(genbank):
+def make_temp_dir(args):
+    '''
+    Makes the temporary directory, if necessary. Returns the temp directory path.
+    '''
+    temp_dir = os.path.join(os.path.dirname(args.out), 'temp')
+    if not os.path.exists(temp_dir):
+        os.makedirs(temp_dir)
+    return temp_dir
+
+def clean_up(k_ref_seqs, gene_seqs, temp_dir):
+    '''
+    Deletes the temporary FASTA files. If the temp directory is then empty, it is deleted too.
+    '''
+    os.remove(k_ref_seqs)
+    os.remove(gene_seqs)
+    if not os.listdir(temp_dir):
+        os.rmdir(temp_dir)
+
+def parse_genbank(genbank, temp_dir):
     '''
     This function reads the input Genbank file and produces two temporary FASTA files: one with the
     K loci nucleotide sequences and one with the gene sequences.
     It returns the file paths for these two FASTA files along with a dictionary that links genes to
     K loci.
     '''
-
-    # A dictionary that shows which genes are in which K locus.
-    # Key = K locus, value = List of Gene objects
     k_ref_genes = {}
-
+    temp_prefix = 'temp_' + str(os.getpid()) + '_'
+    k_ref_seqs_filename = os.path.join(temp_dir, temp_prefix + 'k_ref_seqs.fasta')
+    gene_seqs_filename = os.path.join(temp_dir, temp_prefix + 'gene_seqs.fasta')
+    k_ref_seqs = open(k_ref_seqs_filename, 'w')
+    gene_seqs = open(gene_seqs_filename, 'w')
     for record in SeqIO.parse(genbank, 'genbank'):
         k_locus_name = ''
         for feature in record.features:
@@ -160,31 +180,17 @@ def parse_genbank(genbank):
                         k_locus_name = note[9:]
         if not k_locus_name:
             quit_with_error('Genbank record missing K locus name')
+        k_ref_seqs.write('>' + k_locus_name + '\n')
+        k_ref_seqs.write(add_line_breaks_to_sequence(str(record.seq), 60))
         k_ref_genes[k_locus_name] = []
         gene_num = 1
         for feature in record.features:
             if feature.type == 'CDS':
-                gene_num_string = str(gene_num).zfill(2)
+                gene = Gene(k_locus_name, gene_num, feature, record.seq)
+                k_ref_genes[k_locus_name].append(gene)
                 gene_num += 1
-                full_gene_name = k_locus_name + '_' + gene_num_string
-                if 'gene' in feature.qualifiers:
-                    full_gene_name += '_' + feature.qualifiers['gene'][0]
-                
-                print(full_gene_name) #TEMP
-
-                MAKE A GENE OBJECT (NEW CLASS)
-                GET THE GENE NUCLEOTIDE SEQUENCE
-                TRANSLATE TO GET THE GENE PROTEIN SEQUENCE
-                SAVE ALL OF THE GENE ATTRIBUTES IN THE OBJECT
-                ADD THE GENE OBJECT TO THE k_ref_genes DICTIONARY k_ref_genes[k_locus_name].append(gene)
-
-    print(k_ref_genes) #TEMP
-    quit() #TEMP
-
-
-
-
-    return k_ref_seqs, gene_seqs, k_ref_genes
+                gene_seqs.write(gene.get_fasta())
+    return k_ref_seqs_filename, gene_seqs_filename, k_ref_genes
 
 def check_files_exist(filenames): # type: (list[str]) -> bool
     '''
@@ -206,45 +212,6 @@ def quit_with_error(message): # type: (str) -> None
     '''
     print('Error:', message, file=sys.stderr)
     sys.exit(1)
-
-# def check_inputs(args):
-#     '''
-#     Makes sure that:
-#       1) the gene names in the table are present in the FASTA file
-#       2) each K locus sequence has at least one gene in the table
-#       3) the K loci in the table are present in the FASTA file
-#     If any of these are not true, it quits with an error message.
-#     '''
-#     k_names_from_fasta = set([x[0] for x in load_fasta(args.k_ref_seqs)])
-#     if not k_names_from_fasta:
-#         quit_with_error('No K locus reference sequences found in ' +
-#                         os.path.basename(args.k_ref_seqs))
-#     gene_names_from_fasta = set([x[0] for x in load_fasta(args.gene_seqs)])
-#     if not gene_names_from_fasta:
-#         quit_with_error('No gene sequences found in ' + os.path.basename(args.gene_seqs))
-#     k_names_from_table = set()
-#     gene_names_from_table = set()
-#     table_file = open(args.k_ref_genes, 'r')
-#     for line in table_file:
-#         line_parts = line.strip().split('\t')
-#         if len(line_parts) == 2:
-#             k_names_from_table.add(line_parts[0])
-#             gene_names_from_table.add(line_parts[1])
-#     if not k_names_from_table or not gene_names_from_table:
-#         quit_with_error('No K locus or gene names found in ' + 
-#                         os.path.basename(args.k_ref_genes))
-#     missing_genes = gene_names_from_table.difference(gene_names_from_fasta)
-#     if missing_genes:
-#         quit_with_error('These genes are present in the table but not in the gene FASTA '
-#                         'file: ' + ', '.join(list(missing_genes)))
-#     missing_k_loci = k_names_from_table.difference(k_names_from_fasta)
-#     if missing_k_loci:
-#         quit_with_error('These K loci are present in the table but not in the K locus '
-#                         'FASTA file: ' + ', '.join(list(missing_k_loci)))
-#     missing_k_loci = k_names_from_fasta.difference(k_names_from_table)
-#     if missing_k_loci:
-#         quit_with_error('These K loci are present in the FASTA file but not in the '
-#                         'table: ' + ', '.join(list(missing_k_loci)))
 
 def get_best_k_type_match(assembly, k_refs_fasta, k_refs):
     # type: (Assembly, str, dict[str, KLocus]) -> KLocus
@@ -273,7 +240,7 @@ def get_best_k_type_match(assembly, k_refs_fasta, k_refs):
 def find_assembly_pieces(assembly, k_locus, args):
     '''
     This function uses the BLAST hits in the given K type to find the corresponding pieces of the
-    given assembly.  It saves its results in the KLocus
+    given assembly. It saves its results in the KLocus
     '''
     if not k_locus.blast_hits:
         return
@@ -284,7 +251,7 @@ def find_assembly_pieces(assembly, k_locus, args):
         return
     k_locus.assembly_pieces = fill_assembly_piece_gaps(length_filtered_pieces, args.gap_fill_size)
 
-    # Now check to see if the biggest assembly piece seems to capture the whole locus.  If so, this
+    # Now check to see if the biggest assembly piece seems to capture the whole locus. If so, this
     # is an ideal match.
     biggest_piece = sorted(k_locus.assembly_pieces, key=lambda x: x.get_length(), reverse=True)[0]
     start = biggest_piece.earliest_hit_coordinate()
@@ -293,7 +260,7 @@ def find_assembly_pieces(assembly, k_locus, args):
         k_locus.assembly_pieces = [biggest_piece]
 
     # If it isn't the ideal case, we still want to check if the start and end of the K locus were
-    # found in the same contig.  If so, fill all gaps in between so we include the entire
+    # found in the same contig. If so, fill all gaps in between so we include the entire
     # intervening sequence.
     else:
         earliest, latest, same_contig_and_strand = k_locus.get_earliest_and_latest_pieces()
@@ -307,12 +274,12 @@ def find_assembly_pieces(assembly, k_locus, args):
                                                             [gap_filling_piece])
     k_locus.identity = get_mean_identity(k_locus.assembly_pieces)
 
-def protein_blast(assembly, k_locus, args):
+def protein_blast(assembly, k_locus, gene_seqs, args):
     '''
-    Conducts a BLAST search of all known K locus proteins.  Stores the results in the KLocus
+    Conducts a BLAST search of all known K locus proteins. Stores the results in the KLocus
     object.
     '''
-    hits = get_blast_hits(assembly.fasta, args.gene_seqs, genes=True)
+    hits = get_blast_hits(assembly.fasta, gene_seqs, genes=True)
     hits = [x for x in hits if x.query_cov >= args.min_gene_cov and x.pident >= args.min_gene_id]
     expected_hits = []
     for expected_gene in k_locus.gene_names:
@@ -463,7 +430,7 @@ def get_blast_hits(database, query, genes=False):
 def get_best_hit_for_query(blast_hits, query_name):
     '''
     Given a list of BlastHits, this function returns the best hit for the given query, based on
-    bit score.  It returns None if no BLAST hits match that query.
+    bit score. It returns None if no BLAST hits match that query.
     '''
     matching_hits = [x for x in blast_hits if x.qseqid == query_name]
     if matching_hits:
@@ -595,7 +562,7 @@ def save_assembly_pieces_to_file(k_locus, assembly, output_prefix):
 
 def add_line_breaks_to_sequence(sequence, length):
     '''
-    Wraps sequences to the defined length.  All resulting sequences end in a line break.
+    Wraps sequences to the defined length. All resulting sequences end in a line break.
     '''
     seq_with_breaks = ''
     while len(sequence) > length:
@@ -618,13 +585,13 @@ def line_iterator(string_with_line_breaks):
         yield string_with_line_breaks[prev_newline + 1:next_newline]
         prev_newline = next_newline
 
-def load_k_locus_references(fasta, table): # type: (str, str) -> dict[str, KLocus]
+def load_k_locus_references(fasta, k_ref_genes): # type: (str, str) -> dict[str, KLocus]
     '''
     Returns a dictionary of:
       key = K locus name
       value = KLocus object
     '''
-    return {seq[0]: KLocus(seq[0], seq[1], table) for seq in load_fasta(fasta)}
+    return {seq[0]: KLocus(seq[0], seq[1], k_ref_genes[seq[0]]) for seq in load_fasta(fasta)}
 
 def load_fasta(filename): # type: (str) -> list[tuple[str, str]]
     '''
@@ -692,7 +659,7 @@ def get_nice_contig_name(contig_name):
 
 class BlastHit(object):
     '''
-    Stores the BLAST hit output mostly verbatim.  However, it does convert the BLAST ranges
+    Stores the BLAST hit output mostly verbatim. However, it does convert the BLAST ranges
     (1-based, inclusive end) to Python ranges (0-based, exclusive end).
     '''
     def __init__(self, hit_string):
@@ -774,11 +741,10 @@ class GeneBlastHit(BlastHit):
 
 
 class KLocus(object):
-    def __init__(self, name, seq, table):
+    def __init__(self, name, seq, genes):
         self.name = name
         self.seq = seq
-        self.gene_names = []
-        self.load_genes(table)
+        self.gene_names = [x.full_name for x in genes]
         self.blast_hits = []
         self.hit_ranges = IntRange()
         self.assembly_pieces = []
@@ -826,21 +792,6 @@ class KLocus(object):
         '''
         return 100.0 * self.hit_ranges.get_total_length() / len(self.seq)
 
-    def load_genes(self, table_filename): # type: (str) -> None
-        '''
-        Reads the table file which gives the genes in each K locus and remembers which genes belong
-        in this K locus.
-        '''
-        table_file = open(table_filename, 'r')
-        for line in table_file:
-            line_parts = line.strip().split('\t')
-            if len(line_parts) != 2:
-                continue
-            k_locus_name = line_parts[0]
-            gene_name = line_parts[1]
-            if k_locus_name == self.name:
-                self.gene_names.append(gene_name)
-
     def clean_up_blast_hits(self):
         '''
         This function removes unnecessary BLAST hits from self.blast_hits.
@@ -884,7 +835,7 @@ class KLocus(object):
         Returns an integer of the base discrepancy between the K locus in the assembly and the
         reference K locus sequence.
         E.g. if the assembly match was 5 bases shorter than the reference, this returns -5.
-        This function only applies to cases where the K locus was found in a single contig.  In
+        This function only applies to cases where the K locus was found in a single contig. In
         other cases, it returns None.
         '''
         earliest_piece, latest_piece, same_contig_and_strand = self.get_earliest_and_latest_pieces()
@@ -923,7 +874,7 @@ class KLocus(object):
         return earliest_piece, latest_piece, same_contig_and_strand
 
     def get_missing_gene_string(self):
-        return ';'.join([x.split('__')[2] for x in self.missing_expected_genes])
+        return ';'.join(self.missing_expected_genes)
 
 
 
@@ -1024,7 +975,7 @@ class AssemblyPiece(object):
     def combine(self, other):
         '''
         If this assembly piece and the other can be combined, this function returns the combined
-        piece.  If they can't, it returns None.
+        piece. If they can't, it returns None.
         To be able to combine, pieces must be overlapping or directly adjacent and on the same
         strand.
         '''
@@ -1066,7 +1017,7 @@ class AssemblyPiece(object):
 
 class IntRange(object):
     '''
-    This class contains one or more integer ranges.  Overlapping ranges will be merged together.
+    This class contains one or more integer ranges. Overlapping ranges will be merged together.
     It stores its ranges in a Python-like fashion where the last value in each range is
     exclusive.
     '''
@@ -1147,6 +1098,32 @@ class IntRange(object):
             if not contained:
                 return False
         return True
+
+
+
+
+class Gene(object):
+    '''
+    This class prepares and stores a gene taken from the input Genbank file.
+    '''
+    def __init__(self, k_locus_name, num, feature, k_locus_seq):
+        self.k_locus_name = k_locus_name
+        self.feature = feature
+        gene_num_string = str(num).zfill(2)
+        self.full_name = k_locus_name + '_' + gene_num_string
+        if 'gene' in feature.qualifiers:
+            self.full_name += '_' + feature.qualifiers['gene'][0]
+        self.nuc_seq = feature.extract(k_locus_seq)
+        self.prot_seq = self.nuc_seq.translate(table=11)
+
+    def get_fasta(self):
+        '''
+        Returns the FASTA version of this gene: a header line followed by sequence lines (of
+        protein sequence) ending in a line break.
+        '''
+        return '>' + self.full_name + '\n' + \
+               add_line_breaks_to_sequence(str(self.prot_seq), 60)
+
 
 
 
