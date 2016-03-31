@@ -349,8 +349,10 @@ def output(output_prefix, assembly, k_locus, args):
     writes to stdout as well.
     '''
     uncertainty_chars = k_locus.get_match_uncertainty_chars()
+    expected_genes_per = 100.0 * len(k_locus.expected_hits_inside_locus) / len(k_locus.gene_names)
     expected_genes_str = str(len(k_locus.expected_hits_inside_locus)) + ' / ' + \
-                         str(len(k_locus.gene_names))
+                         str(len(k_locus.gene_names)) + \
+                         ' (' + float_to_str(expected_genes_per) + '%)'
     missing_genes_str = str(len(k_locus.missing_expected_genes)) + ' / ' + \
                         str(len(k_locus.gene_names))
     coverage_str = '%.2f' % k_locus.get_coverage() + '%'
@@ -409,6 +411,16 @@ def output(output_prefix, assembly, k_locus, args):
         for hit in k_locus.other_hits_outside_locus:
             print('        ' + str(hit))
         print()
+
+def float_to_str(float_in):
+    '''
+    This function converts a float to a string in a special manner: if the float is an integer,
+    the resulting string has no decimal point. Otherwise, one decimal point is used.
+    '''
+    if float_in == int(float_in):
+        return str(int(float_in))
+    else:
+        return '%.1f' % float_in
 
 def get_blast_hits(database, query, genes=False):
     '''

@@ -82,14 +82,12 @@ This input Genbank has the following requirements:
 
 Example piece of input Genbank file:
 ```
-...
 source          1..23877
                 /organism="Klebsiella pneumoniae"
                 /mol_type="genomic DNA"
                 /note="K locus: K1"
 CDS             1..897
                 /gene="galF"
-...
 ```
 
 
@@ -162,7 +160,7 @@ These examples show what the tool's results might look like in the output table.
 
 Assembly | Best match locus | Problems | Coverage | Identity | Length discrepancy | Expected genes in locus | Expected genes in locus, details | Missing expected genes | Other genes in locus | Other genes in locus, details | Expected genes outside locus | Expected genes outside locus, details | Other genes outside locus | Other genes outside locus, details
 :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---:
-assembly_1 | K1 |  | 99.94% | 99.81% | -22 bp | 20 / 20 | ... |  | 0 |  | 0 |  | 2 | ...
+assembly_1 | K1 |  | 99.94% | 99.81% | -22 bp | 20 / 20 (100%) | ... |  | 0 |  | 0 |  | 2 | ...
 
 This is a case where our assembly very closely matches a known K locus type. There are no characters in the 'Problems' column, the coverage and identity are both high, the length discrepency is low, and all expected genes were found with high identity. A couple of other low-identity K locus genes hits were elsewhere in the assembly, but that's not abnormal and no cause for concern.
 
@@ -172,7 +170,7 @@ Overall, this is a nice, solid match for K1.
 
 Assembly | Best match locus | Problems | Coverage | Identity | Length discrepancy | Expected genes in locus | Expected genes in locus, details | Missing expected genes | Other genes in locus | Other genes in locus, details | Expected genes outside locus | Expected genes outside locus, details | Other genes outside locus | Other genes outside locus, details
 :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---:
-assembly_2 | K1 | * | 99.84% | 95.32% | +97 bp | 20 / 20 | ... |  | 0 |  | 0 |  | 2 | ...
+assembly_2 | K1 | * | 99.84% | 95.32% | +97 bp | 20 / 20 (100%) | ... |  | 0 |  | 0 |  | 2 | ...
 
 This case shows an assembly that also matches the K1 locus sequence, but not as closely as our previous case. The `*` character indicates that one or more of the expected genes falls below the identity threshold (default 95%). The 'Expected genes in K locus, details' columns, excluded here for brevity, would show the identity for each gene.
 
@@ -182,7 +180,7 @@ Our sample still almost certainly has a K locus type of K1, but it has diverged 
 
 Assembly | Best match locus | Problems | Coverage | Identity | Length discrepancy | Expected genes in locus | Expected genes in locus, details | Missing expected genes | Other genes in locus | Other genes in locus, details | Expected genes outside locus | Expected genes outside locus, details | Other genes outside locus | Other genes outside locus, details
 :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---:
-assembly_3 | K2 | ?- | 99.95% | 98.38% | n/a | 17 / 18 | ... | K2-CDS17-manB | 0 |  | 0 |  | 1 | ...
+assembly_3 | K2 | ?- | 99.95% | 98.38% | n/a | 17 / 18 (94.4%) | ... | K2-CDS17-manB | 0 |  | 0 |  | 1 | ...
 
 Here is a case where our assembly matched a known K locus type well (high coverage and identity) but with a couple of problems. First, the `?` character indicates that the K locus sequence was not found in one piece in the assembly. Second, one of the expected genes (K2-CDS17-manB) was not found in the gene BLAST search.
 
@@ -192,7 +190,7 @@ In cases like this, it is worth examining the case in more detail outside of thi
 
 Assembly | Best match locus | Problems | Coverage | Identity | Length discrepancy | Expected genes in locus | Expected genes in locus, details | Missing expected genes | Other genes in locus | Other genes in locus, details | Expected genes outside locus | Expected genes outside locus, details | Other genes outside locus | Other genes outside locus, details
 :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---:
-assembly_4 | K3 | ?-* | 77.94% | 83.60% | n/a | 15 / 20 | ... | ... | 0 |  | 0 |  | 5 | ...
+assembly_4 | K3 | ?-* | 77.94% | 83.60% | n/a | 15 / 20 (75%) | ... | ... | 0 |  | 0 |  | 5 | ...
 
 In this case, the tool did not find a close match to any known K locus sequence. The best match was to K3, but BLAST only found alignments for 78% of the K3 sequence, and only at 84% nucleotide identity. Five of the twenty K3 genes were not found, and the 15 which were found had low identity. The assembly sequences matching K3 did not come in one piece (indicated by `?`), possibly due to assembly problems, but more likely due to the fact that our sample is not in fact K3 but rather has some novel K locus that was not in our reference inputs.
 
