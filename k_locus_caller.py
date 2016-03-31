@@ -61,7 +61,8 @@ def main():
         find_assembly_pieces(assembly, best_k, args)
         protein_blast(assembly, best_k, gene_seqs, args)
         output(args.out, assembly, best_k, args)
-        save_assembly_pieces_to_file(best_k, assembly, args.out)
+        if not args.no_seq_out:
+            save_assembly_pieces_to_file(best_k, assembly, args.out)
     clean_up(k_ref_seqs, gene_seqs, temp_dir)
     sys.exit(0)
 
@@ -81,6 +82,8 @@ def get_arguments():
                         help='Output directory/prefix')
     parser.add_argument('-v', '--verbose', action='store_true',
                         help='Display detailed information about each assembly in stdout')
+    parser.add_argument('--no_seq_out', action='store_true',
+                        help='Suppress output files of sequences matching K locus')
     parser.add_argument('--start_end_margin', type=int, required=False, default=10,
                         help='Missing bases at the ends of K locus allowed in a perfect match.')
     parser.add_argument('--min_gene_cov', type=float, required=False, default=90.0,

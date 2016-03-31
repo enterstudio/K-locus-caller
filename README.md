@@ -147,9 +147,13 @@ This tool produces a single tab-delimited table summarising the results of all i
 * **Other genes outside locus**: the number of unexpected genes (genes from K loci other than the best match) which were found outside the K locus part of the assembly.
 * **Other genes outside locus, details**: gene names and percent identity (from the BLAST hits) for the other genes found outside the K locus part of the assembly.
 
+If the summary table already exists when the tool is run, it will append to it (not overwrite). This allows you to run the tool in parallel on many assemblies, all outputting to the same table file.
+
 #### K locus matching sequences
 
 For each input assembly, this tool produces a FASTA file of the region(s) of the assembly which correspond to the best K locus match. This may be a single piece (in cases of a good assembly and a strong match) or it may be in multiple pieces (in cases of poor assembly and/or a novel K locus). The file is named using the assembly name and then the best matching K locus name.
+
+These output files can be suppressed by using the `--no_seq_out` option, in which case the tool will only produce the summary table.
 
 
 ## Example results and interpretation
