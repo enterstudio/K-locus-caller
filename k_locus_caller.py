@@ -75,12 +75,6 @@ def get_arguments():
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('-a', '--assembly', nargs='+', type=str, required=True,
                         help='Fasta file(s) for Klebsiella assemblies')
-    # parser.add_argument('-k', '--k_ref_seqs', type=str, required=True,
-    #                     help='Fasta file with reference K locus nucleotide sequences')
-    # parser.add_argument('-g', '--k_ref_genes', type=str, required=True,
-    #                     help='Table file specifying which genes occur in which K locus')
-    # parser.add_argument('-s', '--gene_seqs', type=str, required=True,
-    #                     help='Fasta file with protein sequences for each gene')
     parser.add_argument('-k', '--k_refs', type=str, required=True,
                         help='Genbank file with reference K loci')
     parser.add_argument('-o', '--out', type=str, required=False, default='./k_locus_results',
@@ -129,9 +123,6 @@ def fix_paths(args):
     Also creates the output directory, if necessary.
     '''
     args.assembly = [os.path.abspath(x) for x in args.assembly]
-    # args.k_ref_seqs = os.path.abspath(args.k_ref_seqs)
-    # args.k_ref_genes = os.path.abspath(args.k_ref_genes)
-    # args.gene_seqs = os.path.abspath(args.gene_seqs)
     args.k_refs = os.path.abspath(args.k_refs)
     if args.out[-1] == '/':
         args.out += 'k_locus_results' 
