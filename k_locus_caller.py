@@ -180,9 +180,12 @@ def parse_genbank(genbank, temp_dir):
                         k_locus_name = note[8:].strip()
         if not k_locus_name:
             quit_with_error('Genbank record missing K locus name')
+        if k_locus_name in k_ref_genes:
+            quit_with_error('Duplicate reference K locus name: ' + k_locus_name)
+        k_ref_genes[k_locus_name] = []
         k_ref_seqs.write('>' + k_locus_name + '\n')
         k_ref_seqs.write(add_line_breaks_to_sequence(str(record.seq), 60))
-        k_ref_genes[k_locus_name] = []
+        
         gene_num = 1
         for feature in record.features:
             if feature.type == 'CDS':
