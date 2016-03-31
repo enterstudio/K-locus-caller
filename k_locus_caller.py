@@ -40,6 +40,7 @@ import argparse
 import sys
 import os
 import subprocess
+from Bio import SeqIO
 
 
 def main():
@@ -48,9 +49,10 @@ def main():
     '''
     args = get_arguments()
     check_for_blast()
-    check_files_exist(args.assembly + [args.k_ref_seqs] + [args.k_ref_genes] + [args.gene_seqs])
+    check_files_exist(args.assembly + [args.k_refs])
     fix_paths(args)
-    check_inputs(args)
+    # check_inputs(args)
+    k_ref_seqs, gene_seqs, k_ref_genes = parse_genbank(args.k_refs)
     k_refs = load_k_locus_references(args.k_ref_seqs, args.k_ref_genes) # type: dict[str, KLocus]
     create_table_file(args.out)
     for fasta_file in args.assembly:
@@ -72,19 +74,21 @@ def get_arguments():
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('-a', '--assembly', nargs='+', type=str, required=True,
                         help='Fasta file(s) for Klebsiella assemblies')
-    parser.add_argument('-k', '--k_ref_seqs', type=str, required=True,
-                        help='Fasta file with reference K locus nucleotide sequences')
-    parser.add_argument('-g', '--k_ref_genes', type=str, required=True,
-                        help='Table file specifying which genes occur in which K locus')
-    parser.add_argument('-s', '--gene_seqs', type=str, required=True,
-                        help='Fasta file with protein sequences for each gene')
+    # parser.add_argument('-k', '--k_ref_seqs', type=str, required=True,
+    #                     help='Fasta file with reference K locus nucleotide sequences')
+    # parser.add_argument('-g', '--k_ref_genes', type=str, required=True,
+    #                     help='Table file specifying which genes occur in which K locus')
+    # parser.add_argument('-s', '--gene_seqs', type=str, required=True,
+    #                     help='Fasta file with protein sequences for each gene')
+    parser.add_argument('-k', '--k_refs', type=str, required=True,
+                        help='Genbank file with reference K loci')
     parser.add_argument('-o', '--out', type=str, required=False, default='./k_locus_results',
                         help='Output directory/prefix')
     parser.add_argument('--start_end_margin', type=int, required=False, default=10,
                         help='Missing bases at the ends of K locus allowed in a perfect match.')
     parser.add_argument('--min_gene_cov', type=float, required=False, default=90.0,
                         help='minimum required %% coverage for genes')
-    parser.add_argument('--min_gene_id', type=float, required=False, default=70.0,
+    parser.add_argument('--min_gene_id', type=float, required=False, default=50.0,
                         help='minimum required %% identity for genes')
     parser.add_argument('--low_gene_id', type=float, required=False, default=95.0,
                         help='genes with a %% identity below this value will be flagged as low '
@@ -124,15 +128,63 @@ def fix_paths(args):
     Also creates the output directory, if necessary.
     '''
     args.assembly = [os.path.abspath(x) for x in args.assembly]
-    args.k_ref_seqs = os.path.abspath(args.k_ref_seqs)
-    args.k_ref_genes = os.path.abspath(args.k_ref_genes)
-    args.gene_seqs = os.path.abspath(args.gene_seqs)
+    # args.k_ref_seqs = os.path.abspath(args.k_ref_seqs)
+    # args.k_ref_genes = os.path.abspath(args.k_ref_genes)
+    # args.gene_seqs = os.path.abspath(args.gene_seqs)
+    args.k_refs = os.path.abspath(args.k_refs)
     if args.out[-1] == '/':
         args.out += 'k_locus_results' 
     args.out = os.path.abspath(args.out)
     out_dir = os.path.dirname(args.out)
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
+
+def parse_genbank(genbank):
+    '''
+    This function reads the input Genbank file and produces two temporary FASTA files: one with the
+    K loci nucleotide sequences and one with the gene sequences.
+    It returns the file paths for these two FASTA files along with a dictionary that links genes to
+    K loci.
+    '''
+
+    # A dictionary that shows which genes are in which K locus.
+    # Key = K locus, value = List of Gene objects
+    k_ref_genes = {}
+
+    for record in SeqIO.parse(genbank, 'genbank'):
+        k_locus_name = ''
+        for feature in record.features:
+            if feature.type == 'source' and 'note' in feature.qualifiers:
+                for note in feature.qualifiers['note']:
+                    if note.startswith('K locus: '):
+                        k_locus_name = note[9:]
+        if not k_locus_name:
+            quit_with_error('Genbank record missing K locus name')
+        k_ref_genes[k_locus_name] = []
+        gene_num = 1
+        for feature in record.features:
+            if feature.type == 'CDS':
+                gene_num_string = str(gene_num).zfill(2)
+                gene_num += 1
+                full_gene_name = k_locus_name + '_' + gene_num_string
+                if 'gene' in feature.qualifiers:
+                    full_gene_name += '_' + feature.qualifiers['gene'][0]
+                
+                print(full_gene_name) #TEMP
+
+                MAKE A GENE OBJECT (NEW CLASS)
+                GET THE GENE NUCLEOTIDE SEQUENCE
+                TRANSLATE TO GET THE GENE PROTEIN SEQUENCE
+                SAVE ALL OF THE GENE ATTRIBUTES IN THE OBJECT
+                ADD THE GENE OBJECT TO THE k_ref_genes DICTIONARY k_ref_genes[k_locus_name].append(gene)
+
+    print(k_ref_genes) #TEMP
+    quit() #TEMP
+
+
+
+
+    return k_ref_seqs, gene_seqs, k_ref_genes
 
 def check_files_exist(filenames): # type: (list[str]) -> bool
     '''
@@ -155,44 +207,44 @@ def quit_with_error(message): # type: (str) -> None
     print('Error:', message, file=sys.stderr)
     sys.exit(1)
 
-def check_inputs(args):
-    '''
-    Makes sure that:
-      1) the gene names in the table are present in the FASTA file
-      2) each K locus sequence has at least one gene in the table
-      3) the K loci in the table are present in the FASTA file
-    If any of these are not true, it quits with an error message.
-    '''
-    k_names_from_fasta = set([x[0] for x in load_fasta(args.k_ref_seqs)])
-    if not k_names_from_fasta:
-        quit_with_error('No K locus reference sequences found in ' +
-                        os.path.basename(args.k_ref_seqs))
-    gene_names_from_fasta = set([x[0] for x in load_fasta(args.gene_seqs)])
-    if not gene_names_from_fasta:
-        quit_with_error('No gene sequences found in ' + os.path.basename(args.gene_seqs))
-    k_names_from_table = set()
-    gene_names_from_table = set()
-    table_file = open(args.k_ref_genes, 'r')
-    for line in table_file:
-        line_parts = line.strip().split('\t')
-        if len(line_parts) == 2:
-            k_names_from_table.add(line_parts[0])
-            gene_names_from_table.add(line_parts[1])
-    if not k_names_from_table or not gene_names_from_table:
-        quit_with_error('No K locus or gene names found in ' + 
-                        os.path.basename(args.k_ref_genes))
-    missing_genes = gene_names_from_table.difference(gene_names_from_fasta)
-    if missing_genes:
-        quit_with_error('These genes are present in the table but not in the gene FASTA '
-                        'file: ' + ', '.join(list(missing_genes)))
-    missing_k_loci = k_names_from_table.difference(k_names_from_fasta)
-    if missing_k_loci:
-        quit_with_error('These K loci are present in the table but not in the K locus '
-                        'FASTA file: ' + ', '.join(list(missing_k_loci)))
-    missing_k_loci = k_names_from_fasta.difference(k_names_from_table)
-    if missing_k_loci:
-        quit_with_error('These K loci are present in the FASTA file but not in the '
-                        'table: ' + ', '.join(list(missing_k_loci)))
+# def check_inputs(args):
+#     '''
+#     Makes sure that:
+#       1) the gene names in the table are present in the FASTA file
+#       2) each K locus sequence has at least one gene in the table
+#       3) the K loci in the table are present in the FASTA file
+#     If any of these are not true, it quits with an error message.
+#     '''
+#     k_names_from_fasta = set([x[0] for x in load_fasta(args.k_ref_seqs)])
+#     if not k_names_from_fasta:
+#         quit_with_error('No K locus reference sequences found in ' +
+#                         os.path.basename(args.k_ref_seqs))
+#     gene_names_from_fasta = set([x[0] for x in load_fasta(args.gene_seqs)])
+#     if not gene_names_from_fasta:
+#         quit_with_error('No gene sequences found in ' + os.path.basename(args.gene_seqs))
+#     k_names_from_table = set()
+#     gene_names_from_table = set()
+#     table_file = open(args.k_ref_genes, 'r')
+#     for line in table_file:
+#         line_parts = line.strip().split('\t')
+#         if len(line_parts) == 2:
+#             k_names_from_table.add(line_parts[0])
+#             gene_names_from_table.add(line_parts[1])
+#     if not k_names_from_table or not gene_names_from_table:
+#         quit_with_error('No K locus or gene names found in ' + 
+#                         os.path.basename(args.k_ref_genes))
+#     missing_genes = gene_names_from_table.difference(gene_names_from_fasta)
+#     if missing_genes:
+#         quit_with_error('These genes are present in the table but not in the gene FASTA '
+#                         'file: ' + ', '.join(list(missing_genes)))
+#     missing_k_loci = k_names_from_table.difference(k_names_from_fasta)
+#     if missing_k_loci:
+#         quit_with_error('These K loci are present in the table but not in the K locus '
+#                         'FASTA file: ' + ', '.join(list(missing_k_loci)))
+#     missing_k_loci = k_names_from_fasta.difference(k_names_from_table)
+#     if missing_k_loci:
+#         quit_with_error('These K loci are present in the FASTA file but not in the '
+#                         'table: ' + ', '.join(list(missing_k_loci)))
 
 def get_best_k_type_match(assembly, k_refs_fasta, k_refs):
     # type: (Assembly, str, dict[str, KLocus]) -> KLocus
