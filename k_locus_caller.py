@@ -41,6 +41,10 @@ import sys
 import os
 import subprocess
 from Bio import SeqIO
+from Bio.Seq import Seq
+from Bio.SeqRecord import SeqRecord
+from Bio.Alphabet import generic_dna
+from Bio.SeqFeature import SeqFeature, FeatureLocation
 
 
 def main():
@@ -558,16 +562,29 @@ def complement_base(base):
 
 def save_assembly_pieces_to_file(k_locus, assembly, output_prefix):
     '''
-    Creates a single FASTA file for all of the assembly pieces.
+    Creates a single Genbank file for all of the assembly pieces.
     Assumes all assembly pieces are from the same assembly.
     '''
     if not k_locus.assembly_pieces:
         return
-    fasta_file_name = output_prefix + '_' + assembly.name + '.fasta'
-    fasta_file = open(fasta_file_name, 'w')
+
+    records = []
     for piece in k_locus.assembly_pieces:
-        fasta_file.write('>' + assembly.name + '_' + piece.get_header() + '\n')
-        fasta_file.write(add_line_breaks_to_sequence(piece.get_sequence(), 60))
+        seq = Seq(piece.get_sequence(), generic_dna)
+        record = SeqRecord(seq)
+        record.features.append(SeqFeature(FeatureLocation(0, len(seq)), type='source'))
+        records.append(record)
+
+    filename = output_prefix + '_' + assembly.name + '.gbk'
+    SeqIO.write(records, filename, 'genbank')
+
+
+
+
+    # out_file = open(filename, 'w')
+    # for piece in k_locus.assembly_pieces:
+    #     fasta_file.write('>' + assembly.name + '_' + piece.get_header() + '\n')
+    #     fasta_file.write(add_line_breaks_to_sequence(piece.get_sequence(), 60))
 
 def add_line_breaks_to_sequence(sequence, length):
     '''
