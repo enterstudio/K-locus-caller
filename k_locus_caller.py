@@ -176,8 +176,8 @@ def parse_genbank(genbank, temp_dir):
         for feature in record.features:
             if feature.type == 'source' and 'note' in feature.qualifiers:
                 for note in feature.qualifiers['note']:
-                    if note.startswith('K locus: '):
-                        k_locus_name = note[9:]
+                    if note.startswith('K locus:'):
+                        k_locus_name = note[8:].strip()
         if not k_locus_name:
             quit_with_error('Genbank record missing K locus name')
         k_ref_seqs.write('>' + k_locus_name + '\n')
