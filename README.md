@@ -21,7 +21,7 @@ In cases where your input assembly closely matches a known K locus, this tool sh
   * [Verbose](https://github.com/rrwick/K-locus-caller#verbose)
 * [Output files](https://github.com/rrwick/K-locus-caller#output-files)
   * [Summary table](https://github.com/rrwick/K-locus-caller#summary-table)
-  * [K locus matching sequences](https://github.com/rrwick/K-locus-caller#K locus-matching-sequences)
+  * [K locus matching sequences](https://github.com/rrwick/K-locus-caller#K-locus-matching-sequences)
 * [Example results and interpretation](https://github.com/rrwick/K-locus-caller#example-results-and-interpretation)
   * [Very close match](https://github.com/rrwick/K-locus-caller#very-close-match)
   * [More distant match](https://github.com/rrwick/K-locus-caller#more-distant-match)
@@ -151,7 +151,7 @@ If the summary table already exists when the tool is run, it will append to it (
 
 #### K locus matching sequences
 
-For each input assembly, this tool produces a FASTA file of the region(s) of the assembly which correspond to the best K locus match. This may be a single piece (in cases of a good assembly and a strong match) or it may be in multiple pieces (in cases of poor assembly and/or a novel K locus). The file is named using the assembly name and then the best matching K locus name.
+For each input assembly, this tool produces a Genbank file of the region(s) of the assembly which correspond to the best K locus match. This may be a single piece (in cases of a good assembly and a strong match) or it may be in multiple pieces (in cases of poor assembly and/or a novel K locus). The file is named using the output prefix and the assembly name.
 
 These output files can be suppressed by using the `--no_seq_out` option, in which case the tool will only produce the summary table.
 
