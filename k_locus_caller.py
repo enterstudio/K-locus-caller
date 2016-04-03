@@ -57,13 +57,16 @@ def main():
     fix_paths(args)
     temp_dir = make_temp_dir(args)
     k_ref_seqs, gene_seqs, k_ref_genes = parse_genbank(args.k_refs, temp_dir)
+    all_genes = []
+    for genes in k_ref_genes.itervalues():
+        all_genes += genes
     k_refs = load_k_locus_references(k_ref_seqs, k_ref_genes) # type: dict[str, KLocus]
     create_table_file(args.out)
     for fasta_file in args.assembly:
         assembly = Assembly(fasta_file)
         best_k = get_best_k_type_match(assembly, k_ref_seqs, k_refs)
         find_assembly_pieces(assembly, best_k, args)
-        protein_blast(assembly, best_k, gene_seqs, args)
+        protein_blast(assembly, best_k, gene_seqs, all_genes, args)
         output(args.out, assembly, best_k, args)
         if not args.no_seq_out:
             save_assembly_pieces_to_file(best_k, assembly, args.out)
@@ -223,7 +226,7 @@ def get_best_k_type_match(assembly, k_refs_fasta, k_refs):
     '''
     for k_ref in k_refs.itervalues():
         k_ref.clear()
-    blast_hits = get_blast_hits(assembly.fasta, k_refs_fasta)
+    blast_hits = get_blast_hits(assembly, k_refs_fasta)
     for hit in blast_hits:
         if hit.qseqid not in k_refs:
             quit_with_error('BLAST hit (' + hit.qseqid + ') not found in K locus references')
@@ -245,7 +248,7 @@ def find_assembly_pieces(assembly, k_locus, args):
     '''
     if not k_locus.blast_hits:
         return
-    assembly_pieces = [x.get_assembly_piece(assembly) for x in k_locus.blast_hits]
+    assembly_pieces = [x.assembly_piece for x in k_locus.blast_hits]
     merged_pieces = merge_assembly_pieces(assembly_pieces)
     length_filtered_pieces = [x for x in merged_pieces if x.get_length() >= args.min_assembly_piece]
     if not length_filtered_pieces:
@@ -275,18 +278,18 @@ def find_assembly_pieces(assembly, k_locus, args):
                                                             [gap_filling_piece])
     k_locus.identity = get_mean_identity(k_locus.assembly_pieces)
 
-def protein_blast(assembly, k_locus, gene_seqs, args):
+def protein_blast(assembly, k_locus, gene_seqs, all_genes, args):
     '''
     Conducts a BLAST search of all known K locus proteins. Stores the results in the KLocus
     object.
     '''
-    hits = get_blast_hits(assembly.fasta, gene_seqs, genes=True)
+    hits = get_blast_hits(assembly, gene_seqs, genes=all_genes)
     hits = [x for x in hits if x.query_cov >= args.min_gene_cov and x.pident >= args.min_gene_id]
     expected_hits = []
-    for expected_gene in k_locus.gene_names:
+    for expected_gene in k_locus.genes:
         best_hit = get_best_hit_for_query(hits, expected_gene)
         if not best_hit:
-            k_locus.missing_expected_genes.append(expected_gene)
+            k_locus.missing_expected_genes.append(expected_gene.full_name)
         else:
             best_hit.over_identity_threshold = best_hit.pident >= args.low_gene_id
             expected_hits.append(best_hit)
@@ -347,12 +350,12 @@ def output(output_prefix, assembly, k_locus, args):
     writes to stdout as well.
     '''
     uncertainty_chars = k_locus.get_match_uncertainty_chars()
-    expected_genes_per = 100.0 * len(k_locus.expected_hits_inside_locus) / len(k_locus.gene_names)
+    expected_genes_per = 100.0 * len(k_locus.expected_hits_inside_locus) / len(k_locus.genes)
     expected_genes_str = str(len(k_locus.expected_hits_inside_locus)) + ' / ' + \
-                         str(len(k_locus.gene_names)) + \
+                         str(len(k_locus.genes)) + \
                          ' (' + float_to_str(expected_genes_per) + '%)'
     missing_genes_str = str(len(k_locus.missing_expected_genes)) + ' / ' + \
-                        str(len(k_locus.gene_names))
+                        str(len(k_locus.genes))
     coverage_str = '%.2f' % k_locus.get_coverage() + '%'
     identity_str = '%.2f' % k_locus.identity + '%'
 
@@ -420,32 +423,32 @@ def float_to_str(float_in):
     else:
         return '%.1f' % float_in
 
-def get_blast_hits(database, query, genes=False):
+def get_blast_hits(assembly, query, genes=None):
     '''
-    Returns a list BlastHit objects for a search of the given query in the given database.
+    Returns a list BlastHit objects for a search of the given query in the given assembly.
     '''
     if genes:
         command = ['tblastn']
     else:
         command = ['blastn', '-task', 'blastn']
-    command += ['-db', database, '-query', query, '-outfmt',
+    command += ['-db', assembly.fasta, '-query', query, '-outfmt',
                 '6 qseqid sseqid qstart qend sstart send evalue bitscore length pident qlen qseq']
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     out, err = process.communicate()
     if err:
         quit_with_error('blastn encountered an error:\n' + err)
     if genes:
-        blast_hits = [GeneBlastHit(line) for line in line_iterator(out)]
+        blast_hits = [GeneBlastHit(line, assembly, genes) for line in line_iterator(out)]
     else:
-        blast_hits = [BlastHit(line) for line in line_iterator(out)]
+        blast_hits = [BlastHit(line, assembly) for line in line_iterator(out)]
     return blast_hits
 
-def get_best_hit_for_query(blast_hits, query_name):
+def get_best_hit_for_query(blast_hits, query):
     '''
     Given a list of BlastHits, this function returns the best hit for the given query, based on
     bit score. It returns None if no BLAST hits match that query.
     '''
-    matching_hits = [x for x in blast_hits if x.qseqid == query_name]
+    matching_hits = [x for x in blast_hits if x.qseqid == query.full_name]
     if matching_hits:
         return sorted(matching_hits, key=lambda x: x.bitscore, reverse=True)[0]
     else:
@@ -567,14 +570,31 @@ def save_assembly_pieces_to_file(k_locus, assembly, output_prefix):
     '''
     if not k_locus.assembly_pieces:
         return
-
     records = []
     for piece in k_locus.assembly_pieces:
         seq = Seq(piece.get_sequence(), generic_dna)
         record = SeqRecord(seq)
         record.features.append(SeqFeature(FeatureLocation(0, len(seq)), type='source'))
+        hits_to_include = k_locus.expected_hits_inside_locus + k_locus.other_hits_inside_locus
+        hits_to_include = [x for x in hits_to_include if piece.overlaps_other(x.assembly_piece)]
+        for hit in hits_to_include:
+            start = hit.sstart - piece.start
+            end = hit.send - piece.start
+            hit_strand = 1
+            if hit.strand == '-':
+                hit_strand = -1
+            hit_feature = SeqFeature(FeatureLocation(start, end, strand=hit_strand), type='CDS')
+            hit_feature.qualifiers['codon_start'] = '1'
+            if 'gene' in hit.gene.feature.qualifiers:
+                hit_feature.qualifiers['gene'] = hit.gene.feature.qualifiers['gene']
+            if 'product' in hit.gene.feature.qualifiers:
+                hit_feature.qualifiers['product'] = hit.gene.feature.qualifiers['product']
+            if 'transl_table' in hit.gene.feature.qualifiers:
+                hit_feature.qualifiers['transl_table'] = hit.gene.feature.qualifiers['transl_table']
+            hit_feature.qualifiers['note'] = ['Created by K locus caller']
+            hit_feature.qualifiers['translation'] = hit.prot_seq
+            record.features.append(hit_feature)
         records.append(record)
-
     filename = output_prefix + '_' + assembly.name + '.gbk'
     SeqIO.write(records, filename, 'genbank')
 
@@ -688,7 +708,7 @@ class BlastHit(object):
     Stores the BLAST hit output mostly verbatim. However, it does convert the BLAST ranges
     (1-based, inclusive end) to Python ranges (0-based, exclusive end).
     '''
-    def __init__(self, hit_string):
+    def __init__(self, hit_string, assembly):
         parts = hit_string.split('\t')
         self.qseqid = parts[0]
         self.sseqid = parts[1]
@@ -707,17 +727,12 @@ class BlastHit(object):
         self.length = int(parts[8])
         self.pident = float(parts[9])
         self.query_cov = 100.0 * len(parts[11]) / float(parts[10])
+        self.assembly_piece = AssemblyPiece(assembly, self.sseqid, self.sstart, self.send, self.strand, [self])
 
     def __repr__(self):
         return self.qseqid + ', Contig: ' + self.sseqid + ' (' + str(self.sstart) + '-' + \
                str(self.send) + ', ' + self.strand + ' strand), ' + \
                'Cov: ' + '%.2f' % self.query_cov + '%, ID: ' + '%.2f' % self.pident + '%'
-
-    def get_assembly_piece(self, assembly):
-        '''
-        Returns the piece of the assembly which corresponds to this BLAST hit.
-        '''
-        return AssemblyPiece(assembly, self.sseqid, self.sstart, self.send, self.strand, [self])
 
     def get_query_range(self):
         '''
@@ -740,9 +755,13 @@ class GeneBlastHit(BlastHit):
     '''
     This class adds a few gene-specific things to the BlastHit class.
     '''
-    def __init__(self, hit_string):
-        BlastHit.__init__(self, hit_string)
+    def __init__(self, hit_string, assembly, genes):
+        BlastHit.__init__(self, hit_string, assembly)
         self.over_identity_threshold = False
+        self.prot_seq = Seq(self.assembly_piece.get_sequence(), generic_dna).translate(table=11)
+        for gene in genes:
+            if self.qseqid == gene.full_name:
+                self.gene = gene
 
     def conflicts(self, other):
         '''
@@ -770,7 +789,7 @@ class KLocus(object):
     def __init__(self, name, seq, genes):
         self.name = name
         self.seq = seq
-        self.gene_names = [x.full_name for x in genes]
+        self.genes = genes
         self.blast_hits = []
         self.hit_ranges = IntRange()
         self.assembly_pieces = []
@@ -1023,6 +1042,12 @@ class AssemblyPiece(object):
         '''
         return self.contig_name == contig_name and self.start < end and start < self.end
 
+    def overlaps_other(self, other):
+        '''
+        Conducts an overlap test against another assembly piece.
+        '''
+        return self.overlaps(other.contig_name, other.start, other.end)
+
     def earliest_hit_coordinate(self):
         '''
         Returns the lowest query start coordinate in the BLAST hits.
@@ -1124,7 +1149,6 @@ class IntRange(object):
             if not contained:
                 return False
         return True
-
 
 
 
