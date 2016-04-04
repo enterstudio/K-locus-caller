@@ -1,3 +1,13 @@
+#!/usr/bin/env python
+'''
+K locus caller tests
+
+This script executes some unit tests for the K locus caller script.
+
+Author: Ryan Wick
+email: rrwick@gmail.com
+'''
+
 from __future__ import print_function
 from __future__ import division
 import unittest
