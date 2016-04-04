@@ -44,9 +44,7 @@ from Bio import SeqIO
 
 
 def main():
-    '''
-    Script execution starts here.
-    '''
+    '''Script execution starts here.'''
     args = get_arguments()
     check_for_blast()
     check_files_exist(args.assembly + [args.k_refs])
@@ -69,9 +67,7 @@ def main():
 
 
 def get_arguments():
-    '''
-    Specifies the command line arguments required by the script.
-    '''
+    '''Specifies the command line arguments required by the script.'''
     parser = argparse.ArgumentParser(description='K locus caller',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('-a', '--assembly', nargs='+', type=str, required=True,
@@ -98,13 +94,10 @@ def get_arguments():
     parser.add_argument('--gap_fill_size', type=int, required=False, default=100,
                         help='when separate parts of the assembly are found within this distance, '
                              'they will be merged')
-
     return parser.parse_args()
 
 def check_for_blast(): # type: () -> bool
-    '''
-    Checks to make sure the required BLAST+ tools are available.
-    '''
+    '''Checks to make sure the required BLAST+ tools are available.'''
     if not find_program('makeblastdb'):
         quit_with_error('could not find makeblastdb tool (part of BLAST+)')
     if not find_program('blastn'):
@@ -113,9 +106,7 @@ def check_for_blast(): # type: () -> bool
         quit_with_error('could not find tblastn tool (part of BLAST+)')
 
 def find_program(name): # type: (str) -> bool
-    '''
-    Checks to see if a program exists.
-    '''
+    '''Checks to see if a program exists.'''
     process = subprocess.Popen(['which', name], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     out, err = process.communicate()
     return bool(out) and not bool(err)
@@ -135,9 +126,7 @@ def fix_paths(args):
         os.makedirs(out_dir)
 
 def make_temp_dir(args):
-    '''
-    Makes the temporary directory, if necessary. Returns the temp directory path.
-    '''
+    '''Makes the temporary directory, if necessary. Returns the temp directory path.'''
     temp_dir = os.path.join(os.path.dirname(args.out), 'temp')
     if not os.path.exists(temp_dir):
         os.makedirs(temp_dir)
@@ -190,23 +179,17 @@ def parse_genbank(genbank, temp_dir):
     return k_ref_seqs_filename, gene_seqs_filename, k_ref_genes
 
 def check_files_exist(filenames): # type: (list[str]) -> bool
-    '''
-    Checks to make sure each file in the given list exists.
-    '''
+    '''Checks to make sure each file in the given list exists.'''
     for filename in filenames:
         check_file_exists(filename)
 
 def check_file_exists(filename): # type: (str) -> bool
-    '''
-    Checks to make sure the single given file exists.
-    '''
+    '''Checks to make sure the single given file exists.'''
     if not os.path.isfile(filename):
         quit_with_error('could not find ' + filename)
 
 def quit_with_error(message): # type: (str) -> None
-    '''
-    Displays the given message and ends the program's execution.
-    '''
+    '''Displays the given message and ends the program's execution.'''
     print('Error:', message, file=sys.stderr)
     sys.exit(1)
 
@@ -361,7 +344,7 @@ def output(output_prefix, assembly, k_locus, args):
     line.append(k_locus.get_length_discrepancy_string())
     line.append(expected_genes_str)
     line.append(get_gene_info_string(k_locus.expected_hits_inside_locus))
-    line.append(k_locus.get_missing_gene_string())
+    line.append(';'.join(k_locus.missing_expected_genes))
     line.append(str(len(k_locus.other_hits_inside_locus)))
     line.append(get_gene_info_string(k_locus.other_hits_inside_locus))
     line.append(str(len(k_locus.expected_hits_outside_locus)))
@@ -378,33 +361,61 @@ def output(output_prefix, assembly, k_locus, args):
     if not args.verbose:
         print(assembly.name + ': ' + k_locus.name + uncertainty_chars)
     if args.verbose:
-        print('Assembly: ' + assembly.name)
+        print()
+        assembly_name_line = 'Assembly: ' + assembly.name
+        print(assembly_name_line)
+        print('-' * len(assembly_name_line))
         print('    Best match locus: ' + k_locus.name)
         print('    Problems: ' + uncertainty_chars)
         print('    Coverage: ' + coverage_str)
         print('    Identity: ' + identity_str)
         print('    Length discrepancy: ' + k_locus.get_length_discrepancy_string())
-        print('    Locus assembly pieces:')
-        for piece in k_locus.assembly_pieces:
-            print('        ' + piece.get_header() + ', ' + piece.get_sequence_short())
-        print('    Expected genes in locus: ' + expected_genes_str)
-        for hit in k_locus.expected_hits_inside_locus:
-            print('        ' + str(hit))
-        print('    Missing expected genes: ' + missing_genes_str)
-        for gene in k_locus.missing_expected_genes:
-            print('        ' + str(gene))
-        print('    Other genes in locus: ' + str(len(k_locus.other_hits_inside_locus)))
-        for hit in k_locus.other_hits_inside_locus:
-            print('        ' + str(hit))
-        print('    Expected genes outside locus: ' + \
-              str(len(k_locus.expected_hits_outside_locus)))
-        for hit in k_locus.expected_hits_outside_locus:
-            print('        ' + str(hit))
-        print('    Other genes outside locus: ' + \
-              str(len(k_locus.other_hits_outside_locus)))
-        for hit in k_locus.other_hits_outside_locus:
-            print('        ' + str(hit))
         print()
+        print_assembly_pieces(k_locus.assembly_pieces)
+        print_gene_hits('Expected genes in locus: ' + expected_genes_str,
+                        k_locus.expected_hits_inside_locus)
+        print('    Missing expected genes: ' + missing_genes_str)
+        for missing_gene in k_locus.missing_expected_genes:
+            print('        ' + missing_gene)
+        print()
+        print_gene_hits('Other genes in locus: ' + str(len(k_locus.other_hits_inside_locus)),
+                        k_locus.other_hits_inside_locus)
+        print_gene_hits('Expected genes outside locus: ' + \
+                        str(len(k_locus.expected_hits_outside_locus)),
+                        k_locus.expected_hits_outside_locus)
+        print_gene_hits('Other genes outside locus: ' + \
+                        str(len(k_locus.other_hits_outside_locus)),
+                        k_locus.other_hits_outside_locus)
+
+def print_assembly_pieces(pieces):
+    '''This function prints assembly pieces nicely for verbose output.'''
+    print('    Locus assembly pieces:')
+    if pieces:
+        longest_header = max([len(x.get_nice_header()) for x in pieces])
+        for piece in pieces:
+            first_part = piece.get_nice_header()
+            first_part = first_part.ljust(longest_header)
+            second_part = piece.get_sequence_short()
+            print('        ' + first_part + '  ' + second_part)
+    print()
+
+def print_gene_hits(title, hits):
+    '''This function prints gene hits nicely for verbose output.'''
+    print('    ' + title)
+    if hits:
+        longest_gene_name = max([len(x.qseqid) for x in hits])
+        longest_contig_details = max([len(x.get_contig_details_string()) for x in hits])
+        longest_coverage_details = max([len(x.get_coverage_details_string()) for x in hits])
+        cov_space = max([x.query_cov for x in hits]) == 100.0
+        id_space = max([x.pident for x in hits]) == 100.0
+        spacing_1 = longest_gene_name + 2
+        spacing_2 = spacing_1 + longest_contig_details + 2
+        spacing_3 = spacing_2 + longest_coverage_details + 2
+        for hit in hits:
+            print('        ' + hit.get_aligned_string(spacing_1, spacing_2, spacing_3,
+                                                      cov_space, id_space))
+    print()
+
 
 def float_to_str(float_in):
     '''
@@ -417,9 +428,7 @@ def float_to_str(float_in):
         return '%.1f' % float_in
 
 def get_blast_hits(database, query, genes=False):
-    '''
-    Returns a list BlastHit objects for a search of the given query in the given database.
-    '''
+    '''Returns a list BlastHit objects for a search of the given query in the given database.'''
     if genes:
         command = ['tblastn']
     else:
@@ -525,9 +534,7 @@ def fill_assembly_piece_gaps(pieces, max_gap_fill_size):
     return fixed_pieces
 
 def get_mean_identity(pieces):
-    '''
-    Returns the mean identity (weighted by sequence length) for a list of assembly pieces.
-    '''
+    '''Returns the mean identity (weighted by sequence length) for a list of assembly pieces.'''
     identity_sum = 0.0
     length_sum = 0
     for piece in pieces:
@@ -540,18 +547,14 @@ def get_mean_identity(pieces):
         return identity_sum / length_sum
 
 def reverse_complement(seq):
-    '''
-    Given a DNA sequences, this function returns the reverse complement sequence.
-    '''
+    '''Given a DNA sequences, this function returns the reverse complement sequence.'''
     rev_comp = ''
     for i in reversed(range(len(seq))):
         rev_comp += complement_base(seq[i])
     return rev_comp
 
 def complement_base(base):
-    '''
-    Given a DNA base, this returns the complement.
-    '''
+    '''Given a DNA base, this returns the complement.'''
     forward = 'ATGCatgcRYSWKMryswkmBDHVbdhvNn.-?'
     reverse = 'TACGtacgYRSWMKyrswmkVHDBvhdbNn.-?N'
     return reverse[forward.find(base)]
@@ -570,9 +573,7 @@ def save_assembly_pieces_to_file(k_locus, assembly, output_prefix):
         fasta_file.write(add_line_breaks_to_sequence(piece.get_sequence(), 60))
 
 def add_line_breaks_to_sequence(sequence, length):
-    '''
-    Wraps sequences to the defined length. All resulting sequences end in a line break.
-    '''
+    '''Wraps sequences to the defined length. All resulting sequences end in a line break.'''
     seq_with_breaks = ''
     while len(sequence) > length:
         seq_with_breaks += sequence[:length] + '\n'
@@ -583,9 +584,7 @@ def add_line_breaks_to_sequence(sequence, length):
     return seq_with_breaks
 
 def line_iterator(string_with_line_breaks):
-    '''
-    Iterates over a string containing line breaks, one line at a time.
-    '''
+    '''Iterates over a string containing line breaks, one line at a time.'''
     prev_newline = -1
     while True:
         next_newline = string_with_line_breaks.find('\n', prev_newline + 1)
@@ -595,17 +594,11 @@ def line_iterator(string_with_line_breaks):
         prev_newline = next_newline
 
 def load_k_locus_references(fasta, k_ref_genes): # type: (str, str) -> dict[str, KLocus]
-    '''
-    Returns a dictionary of:
-      key = K locus name
-      value = KLocus object
-    '''
+    '''Returns a dictionary of: key = K locus name, value = KLocus object'''
     return {seq[0]: KLocus(seq[0], seq[1], k_ref_genes[seq[0]]) for seq in load_fasta(fasta)}
 
 def load_fasta(filename): # type: (str) -> list[tuple[str, str]]
-    '''
-    Returns the names and sequences for the given fasta file.
-    '''
+    '''Returns the names and sequences for the given fasta file.'''
     fasta_seqs = []
     fasta_file = open(filename, 'r')
     name = ''
@@ -636,9 +629,7 @@ def good_start_and_end(start, end, k_length, allowed_margin):
     return good_start and good_end and start_before_end
 
 def get_gene_info_string(gene_hit_list):
-    '''
-    Returns a single comma-delimited string summarising the gene hits in the given list.
-    '''
+    '''Returns a single comma-delimited string summarising the gene hits in the given list.'''
     return ';'.join([x.qseqid + ',' + str(x.pident) + '%' for x in gene_hit_list])
 
 
@@ -692,20 +683,47 @@ class BlastHit(object):
         self.query_cov = 100.0 * len(parts[11]) / float(parts[10])
 
     def __repr__(self):
-        return self.qseqid + ', Contig: ' + self.sseqid + ' (' + str(self.sstart) + '-' + \
-               str(self.send) + ', ' + self.strand + ' strand), ' + \
-               'Cov: ' + '%.2f' % self.query_cov + '%, ID: ' + '%.2f' % self.pident + '%'
+        return self.qseqid + ', ' + self.get_contig_details_string() + ', ' + \
+               self.get_coverage_details_string() + ', ' + self.get_identity_details_string()
+
+    def get_contig_details_string(self):
+        '''Returns a string describing the hit's range and strand in the contig.'''
+        return 'Contig: ' + get_nice_contig_name(self.sseqid) + ' (' + str(self.sstart) + '-' + \
+               str(self.send) + ', ' + self.strand + ' strand)'
+
+    def get_coverage_details_string(self, extra_space=False):
+        '''Returns a string describing the hit coverage.'''
+        first_part = 'Cov: '
+        second_part = '%.2f' % self.query_cov + '%'
+        if len(second_part) == 6 and extra_space:
+            first_part += ' '
+        return first_part + second_part
+
+    def get_identity_details_string(self, extra_space=False):
+        '''Returns a string describing the hit identity.'''
+        first_part = 'ID: '
+        second_part = '%.2f' % self.pident + '%'
+        if len(second_part) == 6 and extra_space:
+            first_part += ' '
+        return first_part + second_part
+
+    def get_aligned_string(self, spacing_1, spacing_2, spacing_3, cov_space, id_space):
+        '''Returns a string describing the hit with spaced parts for alignment.'''
+        aligned_string = self.qseqid + '  '
+        aligned_string = aligned_string.ljust(spacing_1)
+        aligned_string += self.get_contig_details_string() + '  '
+        aligned_string = aligned_string.ljust(spacing_2)
+        aligned_string += self.get_coverage_details_string(cov_space) + '  '
+        aligned_string = aligned_string.ljust(spacing_3)
+        aligned_string += self.get_identity_details_string(id_space)
+        return aligned_string
 
     def get_assembly_piece(self, assembly):
-        '''
-        Returns the piece of the assembly which corresponds to this BLAST hit.
-        '''
+        '''Returns the piece of the assembly which corresponds to this BLAST hit.'''
         return AssemblyPiece(assembly, self.sseqid, self.sstart, self.send, self.strand, [self])
 
     def get_query_range(self):
-        '''
-        Produces an IntRange object for the hit query.
-        '''
+        '''Produces an IntRange object for the hit query.'''
         return IntRange([(self.qstart, self.qend)])
 
     def in_assembly_pieces(self, assembly_pieces):
@@ -720,9 +738,7 @@ class BlastHit(object):
 
 
 class GeneBlastHit(BlastHit):
-    '''
-    This class adds a few gene-specific things to the BlastHit class.
-    '''
+    '''This class adds a few gene-specific things to the BlastHit class.'''
     def __init__(self, hit_string):
         BlastHit.__init__(self, hit_string)
         self.over_identity_threshold = False
@@ -768,15 +784,11 @@ class KLocus(object):
         return 'K locus ' + self.name
 
     def get_length(self):
-        '''
-        Returns the K locus sequence length.
-        '''
+        '''Returns the K locus sequence length.'''
         return len(self.seq)
 
     def add_blast_hit(self, hit):
-        '''
-        Adds a BLAST hit and updates the hit ranges.
-        '''
+        '''Adds a BLAST hit and updates the hit ranges.'''
         self.blast_hits.append(hit)
         self.hit_ranges.add_range(hit.qstart, hit.qend)
 
@@ -796,9 +808,7 @@ class KLocus(object):
         self.other_hits_outside_locus = []
 
     def get_coverage(self):
-        '''
-        Returns the % of this K locus which is covered by BLAST hits in the given assembly.
-        '''
+        '''Returns the % of this K locus which is covered by BLAST hits in the given assembly.'''
         return 100.0 * self.hit_ranges.get_total_length() / len(self.seq)
 
     def clean_up_blast_hits(self):
@@ -882,16 +892,11 @@ class KLocus(object):
                                  earliest_piece.strand == latest_piece.strand
         return earliest_piece, latest_piece, same_contig_and_strand
 
-    def get_missing_gene_string(self):
-        return ';'.join(self.missing_expected_genes)
-
 
 
 class Assembly(object):
     def __init__(self, fasta_file):
-        '''
-        Loads in an assembly and builds a BLAST database for it (if necessary).
-        '''
+        '''Loads in an assembly and builds a BLAST database for it (if necessary).'''
         self.fasta = fasta_file
         self.name = os.path.splitext(os.path.basename(fasta_file))[0]
         self.contigs = {x[0]: x[1] for x in load_fasta(fasta_file)} # key = name, value = sequence
@@ -902,17 +907,13 @@ class Assembly(object):
         return self.name
 
     def blast_database_exists(self):
-        '''
-        Returns whether or not a BLAST database already exists for this assembly.
-        '''
+        '''Returns whether or not a BLAST database already exists for this assembly.'''
         return os.path.isfile(self.fasta + '.nin') and \
                os.path.isfile(self.fasta + '.nhr') and \
                os.path.isfile(self.fasta + '.nsq')
 
     def make_blast_database(self):
-        '''
-        Runs makeblastdb on the assembly.
-        '''
+        '''Runs makeblastdb on the assembly.'''
         command = ['makeblastdb', '-dbtype', 'nucl', '-in', self.fasta]
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         _, err = process.communicate()
@@ -921,10 +922,10 @@ class Assembly(object):
 
 
 
-
 class AssemblyPiece(object):
     '''
-    This class describes a piece of an assembly: which contig the piece is on and what the range is.
+    This class describes a piece of an assembly: which contig the piece is on and what the range
+    is.
     '''
     def __init__(self, assembly, contig_name, contig_start, contig_end, strand, blast_hits=[]):
         self.assembly = assembly
@@ -938,17 +939,19 @@ class AssemblyPiece(object):
         return self.assembly.name + '_' + self.get_header()
 
     def get_header(self):
-        '''
-        Returns a descriptive string for the FASTA header when saving this piece to file.
-        '''
+        '''Returns a descriptive string for the FASTA header when saving this piece to file.'''
         nice_contig_name = get_nice_contig_name(self.contig_name)
         return nice_contig_name + '_' + str(self.start + 1) + '_to_' + str(self.end) + \
                '_' + self.strand + '_strand'
 
+    def get_nice_header(self):
+        '''Like get_header, but uses spaces/parentheses instead of underscores for readability.'''
+        nice_contig_name = get_nice_contig_name(self.contig_name)
+        return nice_contig_name + ' (' + str(self.start + 1) + '-' + str(self.end) + \
+               ', ' + self.strand + ' strand)'
+
     def get_bandage_range(self):
-        '''
-        Returns the assembly piece in a Bandage path format.
-        '''
+        '''Returns the assembly piece in a Bandage path format.'''
         if is_contig_name_spades_format(self.contig_name):
             name = self.contig_name.split('_')[1]
         else:
@@ -956,9 +959,7 @@ class AssemblyPiece(object):
         return '(' + str(self.start + 1) + ') ' + name + '+ (' + str(self.end) + ')'
 
     def get_sequence(self):
-        '''
-        Returns the DNA sequence for this piece of the assembly.
-        '''
+        '''Returns the DNA sequence for this piece of the assembly.'''
         seq = self.assembly.contigs[self.contig_name][self.start:self.end]
         if self.strand == '+':
             return seq
@@ -966,15 +967,11 @@ class AssemblyPiece(object):
             return reverse_complement(seq)
 
     def get_length(self):
-        '''
-        Returns the sequence length for this piece.
-        '''
+        '''Returns the sequence length for this piece.'''
         return self.end - self.start
 
     def get_sequence_short(self):
-        '''
-        Returns a shortened format of the sequence
-        '''
+        '''Returns a shortened format of the sequence'''
         seq = self.get_sequence()
         length = len(seq)
         if len(seq) > 9:
@@ -1001,23 +998,17 @@ class AssemblyPiece(object):
             return None
 
     def overlaps(self, contig_name, start, end):
-        '''
-        Returns whether this assembly piece overlaps with the given parameters.
-        '''
+        '''Returns whether this assembly piece overlaps with the given parameters.'''
         return self.contig_name == contig_name and self.start < end and start < self.end
 
     def earliest_hit_coordinate(self):
-        '''
-        Returns the lowest query start coordinate in the BLAST hits.
-        '''
+        '''Returns the lowest query start coordinate in the BLAST hits.'''
         if not self.blast_hits:
             return None
         return sorted([x.qstart for x in self.blast_hits])[0]
 
     def latest_hit_coordinate(self):
-        '''
-        Returns the highest query end coordinate in the BLAST hits.
-        '''
+        '''Returns the highest query end coordinate in the BLAST hits.'''
         if not self.blast_hits:
             return None
         return sorted([x.qend for x in self.blast_hits])[-1]
@@ -1039,34 +1030,24 @@ class IntRange(object):
         return str(self.ranges)
 
     def add_range(self, start, end):
-        '''
-        Adds a single range.
-        '''
+        '''Adds a single range.'''
         self.add_ranges([(start, end)])
 
     def add_ranges(self, ranges):
-        '''
-        Adds multiple ranges (list of tuples)
-        '''
+        '''Adds multiple ranges (list of tuples).'''
         self.ranges += ranges
         self.simplify()
 
     def merge_in_range(self, other):
-        '''
-        Merges the other IntRange object into this one.
-        '''
+        '''Merges the other IntRange object into this one.'''
         self.add_ranges(other.ranges)
 
     def get_total_length(self):
-        '''
-        Returns the number of integers in the ranges.
-        '''
+        '''Returns the number of integers in the ranges.'''
         return sum([x[1] - x[0] for x in self.ranges])
 
     def simplify(self):
-        '''
-        Collapses overlapping ranges together.
-        '''
+        '''Collapses overlapping ranges together.'''
         fixed_ranges = []
         for int_range in self.ranges:
             if int_range[0] > int_range[1]:
@@ -1093,9 +1074,7 @@ class IntRange(object):
         self.ranges = combined
 
     def contains(self, other):
-        '''
-        Returns True if the other IntRange is entirely contained within this IntRange.
-        '''
+        '''Returns True if the other IntRange is entirely contained within this IntRange.'''
         for other_range in other.ranges:
             other_start, other_end = other_range
             contained = False
@@ -1110,11 +1089,8 @@ class IntRange(object):
 
 
 
-
 class Gene(object):
-    '''
-    This class prepares and stores a gene taken from the input Genbank file.
-    '''
+    '''This class prepares and stores a gene taken from the input Genbank file.'''
     def __init__(self, k_locus_name, num, feature, k_locus_seq):
         self.k_locus_name = k_locus_name
         self.feature = feature
@@ -1132,7 +1108,6 @@ class Gene(object):
         '''
         return '>' + self.full_name + '\n' + \
                add_line_breaks_to_sequence(str(self.prot_seq), 60)
-
 
 
 
