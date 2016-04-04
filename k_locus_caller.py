@@ -272,10 +272,14 @@ def protein_blast(assembly, k_locus, gene_seqs, args):
             hits = [x for x in hits if x is not best_hit]
             hits = cull_conflicting_hits(best_hit, hits)
     other_hits = cull_all_conflicting_hits(hits)
-    k_locus.expected_hits_inside_locus = [x for x in expected_hits if x.in_assembly_pieces(k_locus.assembly_pieces)]
-    k_locus.expected_hits_outside_locus = [x for x in expected_hits if not x.in_assembly_pieces(k_locus.assembly_pieces)]
-    k_locus.other_hits_inside_locus = [x for x in other_hits if x.in_assembly_pieces(k_locus.assembly_pieces)]
-    k_locus.other_hits_outside_locus = [x for x in other_hits if not x.in_assembly_pieces(k_locus.assembly_pieces)]
+    k_locus.expected_hits_inside_locus = [x for x in expected_hits \
+                                          if x.in_assembly_pieces(k_locus.assembly_pieces)]
+    k_locus.expected_hits_outside_locus = [x for x in expected_hits \
+                                           if not x.in_assembly_pieces(k_locus.assembly_pieces)]
+    k_locus.other_hits_inside_locus = [x for x in other_hits \
+                                       if x.in_assembly_pieces(k_locus.assembly_pieces)]
+    k_locus.other_hits_outside_locus = [x for x in other_hits \
+                                        if not x.in_assembly_pieces(k_locus.assembly_pieces)]
 
 def create_table_file(output_prefix):
     '''
@@ -295,10 +299,6 @@ def create_table_file(output_prefix):
                               'Expected genes outside locus, details\tOther genes outside locus\t'
                               'Other genes outside locus, details'):
                 return
-
-
-
-
     table = open(table_path, 'w')
     headers = []
     headers.append('Assembly')
@@ -326,12 +326,12 @@ def output(output_prefix, assembly, k_locus, args):
     writes to stdout as well.
     '''
     uncertainty_chars = k_locus.get_match_uncertainty_chars()
-    expected_genes_per = 100.0 * len(k_locus.expected_hits_inside_locus) / len(k_locus.gene_names)
+    expected_per = 100.0 * len(k_locus.expected_hits_inside_locus) / len(k_locus.gene_names)
     expected_genes_str = str(len(k_locus.expected_hits_inside_locus)) + ' / ' + \
-                         str(len(k_locus.gene_names)) + \
-                         ' (' + float_to_str(expected_genes_per) + '%)'
+                         str(len(k_locus.gene_names)) + ' (' + float_to_str(expected_per) + '%)'
+    missing_per = 100.0 * len(k_locus.missing_expected_genes) / len(k_locus.gene_names)
     missing_genes_str = str(len(k_locus.missing_expected_genes)) + ' / ' + \
-                        str(len(k_locus.gene_names))
+                        str(len(k_locus.gene_names)) + ' (' + float_to_str(missing_per) + '%)'
     coverage_str = '%.2f' % k_locus.get_coverage() + '%'
     identity_str = '%.2f' % k_locus.identity + '%'
 
