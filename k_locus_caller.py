@@ -75,7 +75,7 @@ def get_arguments():
     parser = argparse.ArgumentParser(description='K locus caller',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('-a', '--assembly', nargs='+', type=str, required=True,
-                        help='Fasta file(s) for Klebsiella assemblies')
+                        help='Fasta file(s) for assemblies')
     parser.add_argument('-k', '--k_refs', type=str, required=True,
                         help='Genbank file with reference K loci')
     parser.add_argument('-o', '--out', type=str, required=False, default='./k_locus_results',
