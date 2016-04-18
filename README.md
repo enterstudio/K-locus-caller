@@ -34,9 +34,7 @@ In cases where your input assembly closely matches a known K locus, this tool sh
 ## Quick version (for the impatient)
 
 This tool needs the following input files to run (included in this repository):
-* A FASTA file with nucleotide sequences for your known K loci
-* A FASTA file with proteins sequences for the genes in your known K loci
-* A tab-delimited file specifying which genes go in which K loci
+* A multi-record Genbank file with your known K loci (nucleotide sequences for each whole locus and protein sequences for their genes)
 * One or more Klebsiella assemblies in FASTA format
 
 Example command:
