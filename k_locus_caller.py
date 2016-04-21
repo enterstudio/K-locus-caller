@@ -64,8 +64,6 @@ def main():
     clean_up(k_ref_seqs, gene_seqs, temp_dir)
     sys.exit(0)
 
-
-
 def get_arguments():
     '''Specifies the command line arguments required by the script.'''
     parser = argparse.ArgumentParser(description='K locus caller',
@@ -263,7 +261,7 @@ def protein_blast(assembly, k_locus, gene_seqs, args):
     hits = [x for x in hits if x.query_cov >= args.min_gene_cov and x.pident >= args.min_gene_id]
     expected_hits = []
     for expected_gene in k_locus.gene_names:
-        best_hit = get_best_hit_for_query(hits, expected_gene)
+        best_hit = get_best_hit_for_query(hits, expected_gene, k_locus)
         if not best_hit:
             k_locus.missing_expected_genes.append(expected_gene)
         else:
@@ -272,6 +270,7 @@ def protein_blast(assembly, k_locus, gene_seqs, args):
             hits = [x for x in hits if x is not best_hit]
             hits = cull_conflicting_hits(best_hit, hits)
     other_hits = cull_all_conflicting_hits(hits)
+
     k_locus.expected_hits_inside_locus = [x for x in expected_hits \
                                           if x.in_assembly_pieces(k_locus.assembly_pieces)]
     k_locus.expected_hits_outside_locus = [x for x in expected_hits \
@@ -326,9 +325,16 @@ def output(output_prefix, assembly, k_locus, args):
     writes to stdout as well.
     '''
     uncertainty_chars = k_locus.get_match_uncertainty_chars()
-    expected_per = 100.0 * len(k_locus.expected_hits_inside_locus) / len(k_locus.gene_names)
-    expected_genes_str = str(len(k_locus.expected_hits_inside_locus)) + ' / ' + \
-                         str(len(k_locus.gene_names)) + ' (' + float_to_str(expected_per) + '%)'
+    expected_in_locus_per = 100.0 * len(k_locus.expected_hits_inside_locus) / \
+                            len(k_locus.gene_names)
+    expected_out_locus_per = 100.0 * len(k_locus.expected_hits_outside_locus) / \
+                            len(k_locus.gene_names)
+    expected_genes_in_locus_str = str(len(k_locus.expected_hits_inside_locus)) + ' / ' + \
+                                  str(len(k_locus.gene_names)) + ' (' + \
+                                  float_to_str(expected_in_locus_per) + '%)'
+    expected_genes_out_locus_str = str(len(k_locus.expected_hits_outside_locus)) + ' / ' + \
+                                   str(len(k_locus.gene_names)) + ' (' + \
+                                   float_to_str(expected_out_locus_per) + '%)'
     missing_per = 100.0 * len(k_locus.missing_expected_genes) / len(k_locus.gene_names)
     missing_genes_str = str(len(k_locus.missing_expected_genes)) + ' / ' + \
                         str(len(k_locus.gene_names)) + ' (' + float_to_str(missing_per) + '%)'
@@ -342,12 +348,12 @@ def output(output_prefix, assembly, k_locus, args):
     line.append(coverage_str)
     line.append(identity_str)
     line.append(k_locus.get_length_discrepancy_string())
-    line.append(expected_genes_str)
+    line.append(expected_genes_in_locus_str)
     line.append(get_gene_info_string(k_locus.expected_hits_inside_locus))
     line.append(';'.join(k_locus.missing_expected_genes))
     line.append(str(len(k_locus.other_hits_inside_locus)))
     line.append(get_gene_info_string(k_locus.other_hits_inside_locus))
-    line.append(str(len(k_locus.expected_hits_outside_locus)))
+    line.append(expected_genes_out_locus_str)
     line.append(get_gene_info_string(k_locus.expected_hits_outside_locus))
     line.append(str(len(k_locus.other_hits_outside_locus)))
     line.append(get_gene_info_string(k_locus.other_hits_outside_locus))
@@ -372,17 +378,16 @@ def output(output_prefix, assembly, k_locus, args):
         print('    Length discrepancy: ' + k_locus.get_length_discrepancy_string())
         print()
         print_assembly_pieces(k_locus.assembly_pieces)
-        print_gene_hits('Expected genes in locus: ' + expected_genes_str,
+        print_gene_hits('Expected genes in locus: ' + expected_genes_in_locus_str,
                         k_locus.expected_hits_inside_locus)
+        print_gene_hits('Expected genes outside locus: ' + expected_genes_out_locus_str,
+                        k_locus.expected_hits_outside_locus)
         print('    Missing expected genes: ' + missing_genes_str)
         for missing_gene in k_locus.missing_expected_genes:
             print('        ' + missing_gene)
         print()
         print_gene_hits('Other genes in locus: ' + str(len(k_locus.other_hits_inside_locus)),
                         k_locus.other_hits_inside_locus)
-        print_gene_hits('Expected genes outside locus: ' + \
-                        str(len(k_locus.expected_hits_outside_locus)),
-                        k_locus.expected_hits_outside_locus)
         print_gene_hits('Other genes outside locus: ' + \
                         str(len(k_locus.other_hits_outside_locus)),
                         k_locus.other_hits_outside_locus)
@@ -445,14 +450,17 @@ def get_blast_hits(database, query, genes=False):
         blast_hits = [BlastHit(line) for line in line_iterator(out)]
     return blast_hits
 
-def get_best_hit_for_query(blast_hits, query_name):
+def get_best_hit_for_query(blast_hits, query_name, k_locus):
     '''
-    Given a list of BlastHits, this function returns the best hit for the given query, based on
-    bit score. It returns None if no BLAST hits match that query.
+    Given a list of BlastHits, this function returns the best hit for the given query, based first
+    on whether or not the hit is in the assembly pieces, then on bit score.
+    It returns None if no BLAST hits match that query.
     '''
     matching_hits = [x for x in blast_hits if x.qseqid == query_name]
     if matching_hits:
-        return sorted(matching_hits, key=lambda x: x.bitscore, reverse=True)[0]
+        return sorted(matching_hits,
+                      key=lambda x: (x.in_assembly_pieces(k_locus.assembly_pieces), x.bitscore),
+                      reverse=True)[0]
     else:
         return None
 
