@@ -45,7 +45,7 @@ from Bio import SeqIO
 
 def main():
     '''Script execution starts here.'''
-    args = get_arguments()
+    args = get_argument_parser().parse_args()
     check_for_blast()
     check_files_exist(args.assembly + [args.k_refs])
     fix_paths(args)
@@ -64,7 +64,7 @@ def main():
     clean_up(k_ref_seqs, gene_seqs, temp_dir)
     sys.exit(0)
 
-def get_arguments():
+def get_argument_parser():
     '''Specifies the command line arguments required by the script.'''
     parser = argparse.ArgumentParser(description='K locus caller',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -92,7 +92,7 @@ def get_arguments():
     parser.add_argument('--gap_fill_size', type=int, required=False, default=100,
                         help='when separate parts of the assembly are found within this distance, '
                              'they will be merged')
-    return parser.parse_args()
+    return parser
 
 def check_for_blast(): # type: () -> bool
     '''Checks to make sure the required BLAST+ tools are available.'''
