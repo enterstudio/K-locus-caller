@@ -28,6 +28,7 @@ In cases where your input assembly closely matches a known K locus, this tool sh
   * [Broken assembly](https://github.com/rrwick/K-locus-caller#broken-assembly)
   * [Poor match](https://github.com/rrwick/K-locus-caller#poor-match)
 * [Advanced options](https://github.com/rrwick/K-locus-caller#advanced-options)
+* [SLURM jobs](https://github.com/rrwick/K-locus-caller#slurm-jobs)
 * [License](https://github.com/rrwick/K-locus-caller#license)
 
 
@@ -209,6 +210,11 @@ Each of these options has a default and is not required on the command line, but
 * `--low_gene_id`: the percent identity threshold for what counts as a low identity match in the gene BLAST search. This only affects whether or not the `*` character is included in the 'Problems'. Default is 95.
 * `--min_assembly_piece`: the smallest piece of the assembly (measured in bases) that will be included in the output FASTA files. For example, if this value is 100 (the default), then a 50 bp match between the assembly and the best matching K locus reference will be ignored.
 * `--gap_fill_size`: the size of assembly gaps to be filled in when producing the output FASTA files. For example, if this value is 100 (the default) and an assembly has two separate K locus BLAST hits which are only 50 bp apart in a contig, they will be merged together into one sequence for the output FASTA. But if the two BLAST hits were 150 bp apart, they will be included in the output FASTA as two separate sequences. A lower value will possibly result in more fragmented output FASTA sequences. A higher value will possibly result in more sequences being included in the K locus output.
+
+
+## SLURM jobs
+
+If you are running this script on a cluster using [SLURM](http://slurm.schedmd.com/), then you can make use of the extra script: `k_locus_caller_slurm.py`. This will create one SLURM job for each assembly so the jobs can run in parallel. All simultaneous jobs can write to the same output table. It may be necessary to modify this script to suit the details of your cluster.
 
 
 ## License
