@@ -7,14 +7,11 @@ will help a user to decide whether their Klebsiella sample has a known or novel 
 novel, how similar it is to a known type.
 
 This script needs the following input files to run:
-* A FASTA file with nucleotide sequences for your known K types
-* A FASTA file with proteins sequences for the genes in your known K types
-* A tab-delimited file which specifies which genes go in which K types
+* A Genbank file with known K types
 * One or more Klebsiella assemblies in FASTA format
 
 Example command:
-k_locus_caller.py -a path/to/assemblies/*.fasta -k k_loci_refs.fasta -g k_loci_gene_list.txt
-    -s genes.fasta -o output_directory
+k_locus_caller.py -a path/to/assemblies/*.fasta -k k_loci_refs.gbk -o output_directory
 
 For each input assembly file, the script will identify the closest known K type and report
 information about the corresponding K locus genes.
