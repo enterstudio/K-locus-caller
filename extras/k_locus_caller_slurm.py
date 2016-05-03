@@ -37,7 +37,6 @@ def main():
     '''Script execution starts here.'''
     args = get_arguments()
     k_locus_caller.fix_paths(args)
-    k_locus_caller.check_for_blast()
     k_locus_caller.check_files_exist(args.assembly + [args.k_refs])
 
     main_parser = k_locus_caller.get_argument_parser()
