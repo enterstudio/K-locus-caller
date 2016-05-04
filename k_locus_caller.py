@@ -79,7 +79,7 @@ def get_argument_parser():
                         help='Missing bases at the ends of K locus allowed in a perfect match.')
     parser.add_argument('--min_gene_cov', type=float, required=False, default=90.0,
                         help='minimum required %% coverage for genes')
-    parser.add_argument('--min_gene_id', type=float, required=False, default=50.0,
+    parser.add_argument('--min_gene_id', type=float, required=False, default=80.0,
                         help='minimum required %% identity for genes')
     parser.add_argument('--low_gene_id', type=float, required=False, default=95.0,
                         help='genes with a %% identity below this value will be flagged as low '
