@@ -193,7 +193,8 @@ def get_best_k_type_match(assembly, k_refs_fasta, k_refs):
     '''
     Searches for all known K types in the given assembly and returns the best match.
     Best match is defined as the K type for which the largest fraction of the K type has a BLAST
-    hit to the assembly.
+    hit to the assembly. In cases of a tie, the mean identity of the K type BLAST hits are used to
+    determine the best.
     '''
     for k_ref in k_refs.itervalues():
         k_ref.clear()
@@ -208,6 +209,9 @@ def get_best_k_type_match(assembly, k_refs_fasta, k_refs):
         cov = k_ref.get_coverage()
         if cov > best_cov:
             best_cov = cov
+            best_k_ref = k_ref
+        elif cov == best_cov and best_k_ref and \
+             k_ref.get_mean_blast_hit_identity() > best_k_ref.get_mean_blast_hit_identity():
             best_k_ref = k_ref
     best_k_ref.clean_up_blast_hits()
     return best_k_ref
@@ -796,6 +800,18 @@ class KLocus(object):
         '''Adds a BLAST hit and updates the hit ranges.'''
         self.blast_hits.append(hit)
         self.hit_ranges.add_range(hit.qstart, hit.qend)
+
+    def get_mean_blast_hit_identity(self):
+        '''Returns the mean identity (weighted by hit length) for all BLAST hits in the K locus.'''
+        identity_sum = 0.0
+        length_sum = 0
+        for hit in self.blast_hits:
+            length_sum += hit.length
+            identity_sum += hit.length * hit.pident
+        if identity_sum == 0.0:
+            return 0.0
+        else:
+            return identity_sum / length_sum
 
     def clear(self):
         '''
