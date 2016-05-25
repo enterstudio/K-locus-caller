@@ -122,7 +122,8 @@ def fix_paths(args):
 
 def make_temp_dir(args):
     '''Makes the temporary directory, if necessary. Returns the temp directory path.'''
-    temp_dir = os.path.join(os.path.dirname(args.out), 'temp')
+    temp_dir_name = 'temp_' + str(os.getpid())
+    temp_dir = os.path.join(os.path.dirname(args.out), temp_dir_name)
     if not os.path.exists(temp_dir):
         os.makedirs(temp_dir)
     return temp_dir
@@ -144,9 +145,8 @@ def parse_genbank(genbank, temp_dir):
     K loci.
     '''
     k_ref_genes = {}
-    temp_prefix = 'temp_' + str(os.getpid()) + '_'
-    k_ref_seqs_filename = os.path.join(temp_dir, temp_prefix + 'k_ref_seqs.fasta')
-    gene_seqs_filename = os.path.join(temp_dir, temp_prefix + 'gene_seqs.fasta')
+    k_ref_seqs_filename = os.path.join(temp_dir, 'temp_k_ref_seqs.fasta')
+    gene_seqs_filename = os.path.join(temp_dir, 'temp_gene_seqs.fasta')
     k_ref_seqs = open(k_ref_seqs_filename, 'w')
     gene_seqs = open(gene_seqs_filename, 'w')
     for record in SeqIO.parse(genbank, 'genbank'):
