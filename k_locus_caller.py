@@ -243,10 +243,10 @@ def find_assembly_pieces(assembly, k_locus, args):
     # intervening sequence.
     else:
         earliest, latest, same_contig_and_strand = k_locus.get_earliest_and_latest_pieces()
-        start = earliest.earliest_hit_coordinate()
-        end = latest.latest_hit_coordinate()
-        if good_start_and_end(start, end, k_locus.get_length(), args.start_end_margin) and \
-        same_contig_and_strand:
+        k_start = earliest.earliest_hit_coordinate()
+        k_end = latest.latest_hit_coordinate()
+        if good_start_and_end(k_start, k_end, k_locus.get_length(), args.start_end_margin) and \
+           same_contig_and_strand:
             gap_filling_piece = AssemblyPiece(assembly, earliest.contig_name, earliest.start,
                                               latest.end, earliest.strand)
             k_locus.assembly_pieces = merge_assembly_pieces(k_locus.assembly_pieces + \
@@ -911,6 +911,13 @@ class KLocus(object):
         latest_piece = sorted(self.assembly_pieces, key=lambda x: x.latest_hit_coordinate())[-1]
         same_contig_and_strand = earliest_piece.contig_name == latest_piece.contig_name and \
                                  earliest_piece.strand == latest_piece.strand
+        # Even though the pieces are on the same contig and strand, we still need to check whether
+        # the earliest piece comes before the latest piece in that contig.
+        if same_contig_and_strand:
+            if earliest_piece.strand == '+' and earliest_piece.start > latest_piece.end:
+                same_contig_and_strand = False
+            elif earliest_piece.strand == '-' and earliest_piece.start < latest_piece.end:
+                same_contig_and_strand = False
         return earliest_piece, latest_piece, same_contig_and_strand
 
 
