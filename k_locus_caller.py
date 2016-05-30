@@ -875,25 +875,16 @@ class KLocus(object):
         Returns an integer of the base discrepancy between the K locus in the assembly and the
         reference K locus sequence.
         E.g. if the assembly match was 5 bases shorter than the reference, this returns -5.
-        This function only applies to cases where the K locus was found in a single contig. In
+        This function only applies to cases where the K locus was found in a single piece. In
         other cases, it returns None.
         '''
-        earliest_piece, latest_piece, same_contig_and_strand = self.get_earliest_and_latest_pieces()
-        if not same_contig_and_strand:
+        if len(self.assembly_pieces) != 1:
             return None
-        a_start = earliest_piece.start
-        a_end = latest_piece.end
-        whole_piece = AssemblyPiece(earliest_piece.assembly, earliest_piece.contig_name,
-                                    a_start, a_end, earliest_piece.strand)
-        for piece in self.assembly_pieces:
-            if piece.contig_name != whole_piece.contig_name:
-                return None
-            if piece.end > whole_piece.end:
-                return None
-            if piece.start < whole_piece.start:
-                return None
-        k_start = earliest_piece.earliest_hit_coordinate()
-        k_end = latest_piece.latest_hit_coordinate()
+        only_piece = self.assembly_pieces[0]
+        a_start = only_piece.start
+        a_end = only_piece.end
+        k_start = only_piece.earliest_hit_coordinate()
+        k_end = only_piece.latest_hit_coordinate()
         expected_length = k_end - k_start
         actual_length = a_end - a_start
         return actual_length - expected_length
