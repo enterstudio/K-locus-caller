@@ -882,7 +882,16 @@ class KLocus(object):
         if not same_contig_and_strand:
             return None
         a_start = earliest_piece.start
-        a_end = earliest_piece.end
+        a_end = latest_piece.end
+        whole_piece = AssemblyPiece(earliest_piece.assembly, earliest_piece.contig_name,
+                                    a_start, a_end, earliest_piece.strand)
+        for piece in self.assembly_pieces:
+            if piece.contig_name != whole_piece.contig_name:
+                return None
+            if piece.end > whole_piece.end:
+                return None
+            if piece.start < whole_piece.start:
+                return None
         k_start = earliest_piece.earliest_hit_coordinate()
         k_end = latest_piece.latest_hit_coordinate()
         expected_length = k_end - k_start
